@@ -131,3 +131,4 @@ Platform API credentials are stored in the `platforms` table's `api_config` JSON
 - Database migrations: Tables are auto-created on first run via SQLAlchemy.
 - All timestamps are stored in UTC.
 - Platform-specific fields are stored in `platform_metadata` JSON columns.
+# ecom_oms
