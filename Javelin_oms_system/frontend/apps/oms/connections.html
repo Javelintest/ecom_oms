@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Platform Connections - Javelin OMS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="../../static/css/style.css" />
+  <script src="../../static/js/auth-check.js"></script>
+  <style>
+    .connection-card {
+      background: linear-gradient(135deg, rgba(30, 64, 175, 0.1) 0%, rgba(15, 23, 42, 0.3) 100%);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      margin-bottom: 1.5rem;
+      transition: all 0.3s ease;
+    }   
+    
+    .connection-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+    
+    .connection-card.connected {
+      border-left: 4px solid #10b981;
+    }
+    
+    .connection-card.not-connected {
+      border-left: 4px solid #6b7280;
+    }
+    
+    .connection-card.error {
+      border-left: 4px solid #ef4444;
+    }
+    
+    .platform-icon {
+      font-size: 3rem;
+      opacity: 0.8;
+      margin-bottom: 1rem;
+    }
+    
+    .credential-field {
+      position: relative;
+    }
+    
+    .credential-field .toggle-password {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+    }
+    
+    .status-badge {
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+    
+    .test-result {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      display: none;
+    }
+    
+    .test-result.success {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #10b981;
+    }
+    
+    .test-result.error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #ef4444;
+    }
+    
+    /* Form Label Styling - Dark Mode (Default) */
+    .form-label {
+      color: #e5e7eb !important;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+      display: block;
+    }
+    
+    .text-muted {
+      color: #94a3b8 !important;
+    }
+    
+    /* Form Controls - Dark Mode (Default) */
+    .form-control,
+    .form-select {
+      background-color: #1e293b !important;
+      color: #e5e7eb !important;
+      border-color: #475569 !important;
+    }
+    
+    .form-control:focus,
+    .form-select:focus {
+      background-color: #1e293b !important;
+      color: #e5e7eb !important;
+      border-color: #3b82f6 !important;
+      box-shadow: 0 0 0 0.25rem rgba(59, 130, 246, 0.25) !important;
+    }
+    
+    .accordion-button {
+      background-color: #1e293b !important;
+      color: #e5e7eb !important;
+    }
+    
+    .accordion-button:not(.collapsed) {
+      background-color: #1e293b !important;
+      color: #e5e7eb !important;
+    }
+    
+    .accordion-body {
+      background-color: #0f172a !important;
+    }
+    
+    /* Light Mode Styles */
+    body.light-mode {
+      background-color: #f8f9fa;
+      color: #212529;
+    }
+    
+    body.light-mode .section-block,
+    body.light-mode .connection-card,
+    body.light-mode .chart-card {
+      background-color: #ffffff;
+      border: 1px solid #dee2e6;
+      color: #212529;
+    }
+    
+    body.light-mode .form-label {
+      color: #212529 !important;
+    }
+    
+    body.light-mode .form-control,
+    body.light-mode .form-select {
+      background-color: #ffffff !important;
+      color: #212529 !important;
+      border-color: #ced4da !important;
+    }
+    
+    body.light-mode .form-control:focus,
+    body.light-mode .form-select:focus {
+      background-color: #ffffff !important;
+      color: #212529 !important;
+      border-color: #3b82f6 !important;
+      box-shadow: 0 0 0 0.25rem rgba(59, 130, 246, 0.25) !important;
+    }
+    
+    body.light-mode .accordion-button {
+      background-color: #f8f9fa !important;
+      color: #212529 !important;
+    }
+    
+    body.light-mode .accordion-button:not(.collapsed) {
+      background-color: #f8f9fa !important;
+      color: #212529 !important;
+    }
+    
+    body.light-mode .accordion-body {
+      background-color: #ffffff !important;
+    }
+    
+    body.light-mode .text-muted {
+      color: #6c757d !important;
+    }
+    
+    body.light-mode table {
+      color: #212529;
+    }
+    
+    body.light-mode .navbar {
+      background-color: #343a40 !important;
+    }
+    
+    body.light-mode .connection-card {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(255, 255, 255, 0.8) 100%);
+    }
+    
+    body.light-mode .credential-field .toggle-password {
+      color: #6c757d;
+    }
+  </style>
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand">
+        <i class="bi bi-lightning-charge-fill text-primary"></i>
+        <span class="brand-text">Javelin OMS</span>
+      </div>
+      <button class="sidebar-toggle d-lg-none" id="sidebar-close">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="nav-section">
+        <span class="nav-section-title">Suite</span>
+        <a href="../../index.html" class="nav-link">
+          <i class="bi bi-house-door"></i>
+          <span>Portal Home</span>
+        </a>
+      </div>
+      
+      <div class="nav-section">
+        <span class="nav-section-title">Main</span>
+        <a href="oms.html" class="nav-link">
+          <i class="bi bi-speedometer2"></i>
+          <span>Dashboard</span>
+        </a>
+        <a href="oms.html#orders" class="nav-link">
+          <i class="bi bi-cart3"></i>
+          <span>Orders</span>
+        </a>
+        <a href="oms.html#inventory" class="nav-link">
+          <i class="bi bi-box-seam"></i>
+          <span>Inventory</span>
+        </a>
+        <a href="reports.html" class="nav-link">
+          <i class="bi bi-file-earmark-bar-graph"></i>
+          <span>Reports</span>
+        </a>
+      </div>
+      
+      
+      <div class="nav-section">
+        <span class="nav-section-title">Management</span>
+        <a href="oms.html#platforms" class="nav-link">
+          <i class="bi bi-building"></i>
+          <span>Platforms</span>
+        </a>
+        <a href="connections.html" class="nav-link active">
+          <i class="bi bi-plug"></i>
+          <span>Connections</span>
+        </a>
+      </div>
+      
+      <div class="nav-section">
+        <span class="nav-section-title">Settings</span>
+        <a href="#" class="nav-link" id="theme-toggle-nav">
+          <i class="bi bi-moon-stars" id="theme-icon-nav"></i>
+          <span id="theme-text-nav">Dark Mode</span>
+        </a>
+      </div>
+    </nav>
+    
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar">
+          <i class="bi bi-person-circle"></i>
+        </div>
+        <div class="user-details">
+          <span class="user-name">Admin User</span>
+          <span class="user-role">Seller Account</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <div class="main-wrapper">
+    <!-- Top Navbar -->
+    <nav class="top-navbar">
+      <button class="sidebar-toggle d-lg-none" id="sidebar-open">
+        <i class="bi bi-list"></i>
+      </button>
+      <div class="navbar-title">
+        <h5 class="mb-0">Platform Connections</h5>
+      </div>
+      <div class="navbar-actions">
+        <a href="../../index.html" class="btn btn-sm btn-outline-primary d-none d-md-inline-flex align-items-center gap-2 me-2" style="border-radius: 0.5rem; padding: 0.5rem 0.75rem; font-weight: 500;">
+          <i class="bi bi-arrow-left-circle"></i> Back to Portal
+        </a>
+        <button class="btn btn-icon" id="theme-toggle" title="Toggle Theme">
+          <i class="bi bi-moon-fill" id="theme-icon"></i>
+        </button>
+        <button class="btn btn-icon" id="btn-refresh-all" title="Refresh All">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Page Content -->
+    <main class="main-content">
+      <div class="page-content-wrapper">
+        <div class="mb-4">
+          <h3 class="mb-1"><i class="bi bi-plug me-2"></i>Platform Connections</h3>
+          <p class="text-muted mb-0">Connect and manage your e-commerce platform integrations</p>
+        </div>
+
+      <div id="connection-alerts"></div>
+
+      <!-- Amazon Connection Card -->
+      <div class="connection-card" id="amazon-card">
+        <div class="row">
+          <div class="col-md-3 text-center">
+            <div class="platform-icon text-primary">
+              <i class="bi bi-amazon"></i>
+            </div>
+            <h5 class="mb-2">Amazon Seller Central</h5>
+            <div id="amazon-status" class="mb-3"></div>
+            <div id="amazon-actions" class="d-flex gap-2 justify-content-center"></div>
+          </div>
+          <div class="col-md-9">
+            <div class="accordion" id="amazonAccordion">
+              <div class="accordion-item bg-transparent border-secondary">
+                <h2 class="accordion-header">
+                  <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#amazonOAuth">
+                    <i class="bi bi-shield-check me-2"></i>Connect via OAuth (Recommended)
+                  </button>
+                </h2>
+                <div id="amazonOAuth" class="accordion-collapse collapse" data-bs-parent="#amazonAccordion">
+                  <div class="accordion-body">
+                    <form id="amazon-oauth-form">
+                      <div class="row">
+                        <div class="col-md-6 mb-3">
+                          <label class="form-label" for="amazon-client-id">
+                            <i class="bi bi-key me-1"></i>Client ID (LWA Client Identifier)
+                          </label>
+                          <input type="text" class="form-control" id="amazon-client-id" required placeholder="amzn1.application-oa2-client.xxxxx">
+                          <small class="text-muted d-block mt-1">
+                            <i class="bi bi-info-circle me-1"></i>Get this from Amazon Developer Central
+                          </small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                          <label class="form-label" for="amazon-client-secret">
+                            <i class="bi bi-lock me-1"></i>Client Secret (LWA Client Secret)
+                          </label>
+                          <div class="credential-field">
+                            <input type="password" class="form-control" id="amazon-client-secret" required placeholder="Enter client secret">
+                            <button type="button" class="toggle-password" onclick="togglePassword('amazon-client-secret')">
+                              <i class="bi bi-eye"></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="row">
+                        <div class="col-md-6 mb-3">
+                          <label class="form-label" for="amazon-marketplace-id">
+                            <i class="bi bi-globe me-1"></i>Marketplace ID
+                          </label>
+                          <select class="form-select" id="amazon-marketplace-id" required>
+                            <option value="ATVPDKIKX0DER">US - ATVPDKIKX0DER</option>
+                            <option value="A1F83G8C2ARO7P">UK - A1F83G8C2ARO7P</option>
+                            <option value="A1PA6795UKMFR9">Germany - A1PA6795UKMFR9</option>
+                            <option value="A19VAU5U5O7RUS">India - A19VAU5U5O7RUS</option>
+                            <option value="A2EUQ1WTGCTBG2">Canada - A2EUQ1WTGCTBG2</option>
+                          </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                          <label class="form-label" for="amazon-region">
+                            <i class="bi bi-geo-alt me-1"></i>Region
+                          </label>
+                          <select class="form-select" id="amazon-region">
+                            <option value="NA">North America (NA)</option>
+                            <option value="EU">Europe (EU)</option>
+                            <option value="FE">Far East (FE)</option>
+                            <option value="SANDBOX">Sandbox (Testing)</option>
+                          </select>
+                        </div>
+                      </div>
+                      <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-shield-check me-2"></i>Start OAuth Flow
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+              <div class="accordion-item bg-transparent border-secondary">
+                <h2 class="accordion-header">
+                  <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#amazonManual">
+                    <i class="bi bi-key me-2"></i>Connect Manually (Enter Credentials)
+                  </button>
+                </h2>
+                <div id="amazonManual" class="accordion-collapse collapse" data-bs-parent="#amazonAccordion">
+                  <div class="accordion-body">
+                    <!-- Sandbox Helper Alert -->
+                    <div class="alert alert-info d-flex align-items-center mb-3" role="alert">
+                      <i class="bi bi-info-circle me-2"></i>
+                      <div class="flex-grow-1">
+                        <strong>Testing with Sandbox?</strong> Make sure to select "Sandbox (Testing)" as the Region and use your sandbox credentials.
+                      </div>
+                      <button type="button" class="btn btn-sm btn-outline-info" onclick="fillSandboxToken()">
+                        <i class="bi bi-lightning-fill me-1"></i>Use Sandbox Token
+                      </button>
+                    </div>
+                    
+                    <form id="amazon-manual-form">
+                      <div class="row">
+                        <div class="col-md-6 mb-3">
+                          <label class="form-label" for="amazon-manual-client-id">
+                            <i class="bi bi-key me-1"></i>Client ID
+                          </label>
+                          <input type="text" class="form-control" id="amazon-manual-client-id" required placeholder="amzn1.application-oa2-client.xxxxx">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                          <label class="form-label" for="amazon-manual-client-secret">
+                            <i class="bi bi-lock me-1"></i>Client Secret
+                          </label>
+                          <div class="credential-field">
+                            <input type="password" class="form-control" id="amazon-manual-client-secret" required placeholder="Enter client secret">
+                            <button type="button" class="toggle-password" onclick="togglePassword('amazon-manual-client-secret')">
+                              <i class="bi bi-eye"></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label" for="amazon-refresh-token">
+                          <i class="bi bi-arrow-repeat me-1"></i>Refresh Token
+                        </label>
+                        <div class="input-group">
+                          <input type="text" class="form-control" id="amazon-refresh-token" required placeholder="Atzr|xxxxx">
+                          <button type="button" class="btn btn-outline-secondary" onclick="pasteSandboxToken()" title="Paste Sandbox Token">
+                            <i class="bi bi-clipboard"></i>
+                          </button>
+                        </div>
+                        <small class="text-muted d-block mt-1">
+                          <i class="bi bi-info-circle me-1"></i>Get this from Amazon Developer Central after OAuth authorization, or use the sandbox token for testing
+                        </small>
+                      </div>
+                      <div class="row">
+                        <div class="col-md-6 mb-3">
+                          <label class="form-label" for="amazon-manual-marketplace-id">
+                            <i class="bi bi-globe me-1"></i>Marketplace ID
+                          </label>
+                          <select class="form-select" id="amazon-manual-marketplace-id" required>
+                            <option value="ATVPDKIKX0DER">US - ATVPDKIKX0DER</option>
+                            <option value="A1F83G8C2ARO7P">UK - A1F83G8C2ARO7P</option>
+                            <option value="A1PA6795UKMFR9">Germany - A1PA6795UKMFR9</option>
+                            <option value="A19VAU5U5O7RUS">India - A19VAU5U5O7RUS</option>
+                            <option value="A2EUQ1WTGCTBG2">Canada - A2EUQ1WTGCTBG2</option>
+                          </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                          <label class="form-label" for="amazon-manual-region">
+                            <i class="bi bi-geo-alt me-1"></i>Region
+                          </label>
+                          <select class="form-select" id="amazon-manual-region">
+                            <option value="NA">North America (NA)</option>
+                            <option value="EU">Europe (EU)</option>
+                            <option value="FE">Far East (FE)</option>
+                            <option value="SANDBOX">Sandbox (Testing)</option>
+                          </select>
+                        </div>
+                      </div>
+                      <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle me-2"></i>Connect Amazon
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="amazon-test-result" class="test-result"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flipkart Connection Card -->
+      <div class="connection-card" id="flipkart-card">
+        <div class="row">
+          <div class="col-md-3 text-center">
+            <div class="platform-icon text-warning">
+              <i class="bi bi-shop"></i>
+            </div>
+            <h5 class="mb-2">Flipkart Seller Hub</h5>
+            <div id="flipkart-status" class="mb-3"></div>
+            <div id="flipkart-actions" class="d-flex gap-2 justify-content-center"></div>
+          </div>
+          <div class="col-md-9">
+            <form id="flipkart-connection-form">
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label class="form-label" for="flipkart-username">
+                    <i class="bi bi-person me-1"></i>Username / Seller ID
+                  </label>
+                  <input type="text" class="form-control" id="flipkart-username" required placeholder="Enter your Flipkart seller username">
+                </div>
+                <div class="col-md-6 mb-3">
+                  <label class="form-label" for="flipkart-password">
+                    <i class="bi bi-lock me-1"></i>Password
+                  </label>
+                  <div class="credential-field">
+                    <input type="password" class="form-control" id="flipkart-password" required placeholder="Enter your password">
+                    <button type="button" class="toggle-password" onclick="togglePassword('flipkart-password')">
+                      <i class="bi bi-eye"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label class="form-label" for="flipkart-api-key">
+                    <i class="bi bi-key me-1"></i>API Key <span class="text-muted">(Optional)</span>
+                  </label>
+                  <input type="text" class="form-control" id="flipkart-api-key" placeholder="Enter API key if available">
+                </div>
+                <div class="col-md-6 mb-3">
+                  <label class="form-label" for="flipkart-api-secret">
+                    <i class="bi bi-shield-lock me-1"></i>API Secret <span class="text-muted">(Optional)</span>
+                  </label>
+                  <div class="credential-field">
+                    <input type="password" class="form-control" id="flipkart-api-secret" placeholder="Enter API secret if available">
+                    <button type="button" class="toggle-password" onclick="togglePassword('flipkart-api-secret')">
+                      <i class="bi bi-eye"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-warning">
+                <i class="bi bi-check-circle me-2"></i>Connect Flipkart
+              </button>
+            </form>
+            <div id="flipkart-test-result" class="test-result"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Meesho Connection Card -->
+      <div class="connection-card" id="meesho-card">
+        <div class="row">
+          <div class="col-md-3 text-center">
+            <div class="platform-icon text-info">
+              <i class="bi bi-bag"></i>
+            </div>
+            <h5 class="mb-2">Meesho Seller Panel</h5>
+            <div id="meesho-status" class="mb-3"></div>
+          </div>
+          <div class="col-md-9">
+            <div class="alert alert-info">
+              <i class="bi bi-info-circle me-2"></i>
+              Meesho integration is coming soon. We're working on adding support for Meesho Seller API.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Myntra Connection Card -->
+      <div class="connection-card" id="myntra-card">
+        <div class="row">
+          <div class="col-md-3 text-center">
+            <div class="platform-icon text-danger">
+              <i class="bi bi-tag"></i>
+            </div>
+            <h5 class="mb-2">Myntra Seller Portal</h5>
+            <div id="myntra-status" class="mb-3"></div>
+          </div>
+          <div class="col-md-9">
+            <div class="alert alert-info">
+              <i class="bi bi-info-circle me-2"></i>
+              Myntra integration is coming soon. We're working on adding support for Myntra Seller API.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connection Logs Section -->
+      <div class="chart-card mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="chart-title mb-0"><i class="bi bi-clock-history me-2"></i>Connection History</h6>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadConnectionLogs()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+          </button>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Platform</th>
+                <th>Job Type</th>
+                <th>Status</th>
+                <th>Message</th>
+                <th>Records</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="connection-logs-table">
+              <tr>
+                <td colspan="6" class="text-center text-muted">Loading connection logs...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="../../static/js/connections.js"></script>
+</body>
+</html>

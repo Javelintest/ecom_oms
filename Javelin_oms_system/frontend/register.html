@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Register - Javelin Suite</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css"
+    />
+    <link rel="stylesheet" href="static/css/style.css" />
+    <style>
+      body {
+        background: radial-gradient(circle at top left, #1e293b, #020617);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+
+      .login-card {
+        background: rgba(30, 41, 59, 0.4);
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 2rem;
+        padding: 3rem;
+        width: 100%;
+        max-width: 450px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        animation: cardEntrance 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      @keyframes cardEntrance {
+        from {
+          opacity: 0;
+          transform: translateY(20px) scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .login-header {
+        text-align: center;
+        margin-bottom: 2.5rem;
+      }
+
+      .login-logo {
+        font-size: 2.5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #60a5fa, #a78bfa);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+        display: block;
+      }
+
+      .form-label {
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+      }
+
+      .form-control {
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        color: white;
+        padding: 0.8rem 1.2rem;
+        border-radius: 1rem;
+        transition: all 0.3s;
+      }
+
+      .form-control:focus {
+        background: rgba(15, 23, 42, 0.8);
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        color: white;
+      }
+
+      .btn-register {
+        background: linear-gradient(135deg, #10b981, #3b82f6);
+        border: none;
+        padding: 1rem;
+        border-radius: 1rem;
+        font-weight: 700;
+        color: white;
+        width: 100%;
+        margin-top: 1.5rem;
+        box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.4);
+        transition: all 0.3s;
+      }
+
+      .btn-register:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 20px 25px -5px rgba(16, 185, 129, 0.5);
+        color: white;
+      }
+
+      .auth-footer {
+        text-align: center;
+        margin-top: 2rem;
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+      }
+
+      .auth-footer a {
+        color: var(--primary);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .alert-success {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        border-radius: 1rem;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="login-card">
+      <div class="login-header">
+        <span class="login-logo">Create Account</span>
+        <p class="text-secondary">Join the Javelin E-commerce Suite</p>
+      </div>
+
+      <div id="success-alert" class="alert alert-success p-3 mb-4">
+        <i class="bi bi-check-circle-fill me-2"></i> Account created!
+        Redirecting to login...
+      </div>
+
+      <div
+        id="error-box"
+        class="alert alert-danger p-3 mb-4"
+        style="
+          display: none;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid rgba(239, 68, 68, 0.2);
+          color: #ef4444;
+        "
+      >
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <span id="error-text">Registration failed</span>
+      </div>
+
+      <form id="register-form">
+        <div class="mb-3">
+          <label for="full_name" class="form-label">Full Name</label>
+          <input
+            type="text"
+            class="form-control"
+            id="full_name"
+            required
+            placeholder="John Doe"
+          />
+        </div>
+        <div class="mb-3">
+          <label for="email" class="form-label">Email Address</label>
+          <input
+            type="email"
+            class="form-control"
+            id="email"
+            required
+            placeholder="name@company.com"
+          />
+        </div>
+        <div class="mb-4">
+          <label for="password" class="form-label">Password</label>
+          <input
+            type="password"
+            class="form-control"
+            id="password"
+            required
+            placeholder="••••••••"
+            minlength="6"
+          />
+        </div>
+        <button type="submit" class="btn-register" id="btn-reg-text">
+          Register Now <i class="bi bi-person-plus ms-2"></i>
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        Already have an account? <a href="login.html">Sign In</a>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+      const API_BASE_URL = "http://127.0.0.1:8000";
+
+      document
+        .getElementById("register-form")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const fullName = document.getElementById("full_name").value;
+          const email = document.getElementById("email").value;
+          const password = document.getElementById("password").value;
+          const errorBox = document.getElementById("error-box");
+          const successAlert = document.getElementById("success-alert");
+          const errorText = document.getElementById("error-text");
+          const btnText = document.getElementById("btn-reg-text");
+
+          errorBox.style.display = "none";
+          successAlert.style.display = "none";
+          btnText.innerHTML =
+            '<span class="spinner-border spinner-border-sm me-2"></span>Creating account...';
+          btnText.disabled = true;
+
+          try {
+            const response = await axios.post(
+              `${API_BASE_URL}/oms/auth/register`,
+              {
+                email: email,
+                password: password,
+                full_name: fullName,
+              }
+            );
+
+            successAlert.style.display = "block";
+            setTimeout(() => {
+              window.location.href = "login.html";
+            }, 2000);
+          } catch (error) {
+            console.error("Registration error:", error);
+            errorBox.style.display = "block";
+            errorText.innerText =
+              error.response?.data?.detail ||
+              "Registration failed. Please try again.";
+            btnText.innerHTML =
+              'Register Now <i class="bi bi-person-plus ms-2"></i>';
+            btnText.disabled = false;
+          }
+        });
+    </script>
+  </body>
+</html>

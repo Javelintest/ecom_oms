@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Reports - Javelin OMS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="../../static/css/style.css" />
+  <script src="../../static/js/auth-check.js"></script>
+  <style>
+    .report-card {
+      background: linear-gradient(135deg, rgba(30, 64, 175, 0.1) 0%, rgba(15, 23, 42, 0.3) 100%);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      margin-bottom: 1.5rem;
+      transition: all 0.3s ease;
+    }
+    
+    .report-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+    
+    .report-type-card {
+      background: rgba(30, 64, 175, 0.1);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      margin-bottom: 1rem;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    
+    .report-type-card:hover {
+      background: rgba(30, 64, 175, 0.2);
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+    
+    .report-type-card.selected {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: #3b82f6;
+      border-width: 2px;
+    }
+    
+    .status-badge {
+      padding: 0.4rem 0.8rem;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      font-size: 0.75rem;
+    }
+    
+    .category-badge {
+      padding: 0.25rem 0.6rem;
+      border-radius: 0.25rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+    
+    /* Light Mode */
+    body.light-mode .report-card {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(255, 255, 255, 0.8) 100%);
+      border: 1px solid #dee2e6;
+    }
+    
+    body.light-mode .report-type-card {
+      background: rgba(59, 130, 246, 0.05);
+      border: 1px solid #dee2e6;
+    }
+    
+    body.light-mode .report-type-card:hover {
+      background: rgba(59, 130, 246, 0.1);
+    }
+    
+    body.light-mode .report-type-card.selected {
+      background: rgba(59, 130, 246, 0.15);
+      border-color: #3b82f6;
+    }
+  </style>
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand">
+        <i class="bi bi-lightning-charge-fill text-primary"></i>
+        <span class="brand-text">Javelin OMS</span>
+      </div>
+      <button class="sidebar-toggle d-lg-none" id="sidebar-close">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="nav-section">
+        <span class="nav-section-title">Suite</span>
+        <a href="../../index.html" class="nav-link">
+          <i class="bi bi-house-door"></i>
+          <span>Portal Home</span>
+        </a>
+      </div>
+      
+      <div class="nav-section">
+        <span class="nav-section-title">Main</span>
+        <a href="oms.html" class="nav-link">
+          <i class="bi bi-speedometer2"></i>
+          <span>Dashboard</span>
+        </a>
+        <a href="oms.html#orders" class="nav-link">
+          <i class="bi bi-cart3"></i>
+          <span>Orders</span>
+        </a>
+        <a href="oms.html#inventory" class="nav-link">
+          <i class="bi bi-box-seam"></i>
+          <span>Inventory</span>
+        </a>
+        <a href="reports.html" class="nav-link active">
+          <i class="bi bi-file-earmark-bar-graph"></i>
+          <span>Reports</span>
+        </a>
+      </div>
+      
+      
+      <div class="nav-section">
+        <span class="nav-section-title">Management</span>
+        <a href="oms.html#platforms" class="nav-link">
+          <i class="bi bi-building"></i>
+          <span>Platforms</span>
+        </a>
+        <a href="connections.html" class="nav-link">
+          <i class="bi bi-plug"></i>
+          <span>Connections</span>
+        </a>
+      </div>
+      
+      <div class="nav-section">
+        <span class="nav-section-title">Settings</span>
+        <a href="#" class="nav-link" id="theme-toggle-nav">
+          <i class="bi bi-moon-stars" id="theme-icon-nav"></i>
+          <span id="theme-text-nav">Dark Mode</span>
+        </a>
+      </div>
+    </nav>
+    
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar">
+          <i class="bi bi-person-circle"></i>
+        </div>
+        <div class="user-details">
+          <span class="user-name">Admin User</span>
+          <span class="user-role">Seller Account</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <div class="main-wrapper">
+    <!-- Top Navbar -->
+    <nav class="top-navbar">
+      <button class="sidebar-toggle d-lg-none" id="sidebar-open">
+        <i class="bi bi-list"></i>
+      </button>
+      <div class="navbar-title">
+        <h5 class="mb-0">Reports Center</h5>
+      </div>
+      <div class="navbar-actions">
+        <a href="../../index.html" class="btn btn-sm btn-outline-primary d-none d-md-inline-flex align-items-center gap-2 me-2" style="border-radius: 0.5rem; padding: 0.5rem 0.75rem; font-weight: 500;">
+          <i class="bi bi-arrow-left-circle"></i> Back to Portal
+        </a>
+        <button class="btn btn-icon" id="theme-toggle" title="Toggle Theme">
+          <i class="bi bi-moon-fill" id="theme-icon"></i>
+        </button>
+        <button class="btn btn-icon" id="btn-refresh-reports" title="Refresh">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Page Content -->
+    <main class="main-content">
+      <div class="page-content-wrapper">
+        <div class="mb-4">
+          <h3 class="mb-1"><i class="bi bi-file-earmark-bar-graph me-2"></i>Reports Center</h3>
+          <p class="text-muted mb-0">Generate, view, and download reports from your connected platforms</p>
+        </div>
+
+      <div id="reports-alerts"></div>
+
+      <!-- Platform Selection -->
+      <div class="report-card">
+        <h5 class="mb-3"><i class="bi bi-building me-2"></i>Select Platform</h5>
+        <div class="btn-group w-100 flex-wrap" role="group" id="platform-selector">
+          <!-- Platforms will be loaded here -->
+        </div>
+      </div>
+
+      <div class="row">
+        <!-- Report Types -->
+        <div class="col-lg-4">
+          <div class="report-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="mb-0"><i class="bi bi-list-check me-2"></i>Available Reports</h5>
+              <span class="badge bg-primary" id="report-types-count">0</span>
+            </div>
+            
+            <!-- Category Filter -->
+            <div class="mb-3">
+              <select class="form-select form-select-sm" id="category-filter">
+                <option value="">All Categories</option>
+              </select>
+            </div>
+            
+            <div id="report-types-list" class="overflow-auto" style="max-height: 500px;">
+              <div class="text-center text-muted py-5">
+                <i class="bi bi-inbox display-4 d-block mb-3 opacity-50"></i>
+                <p>Select a platform to view available reports</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Request Report Form -->
+        <div class="col-lg-8">
+          <div class="report-card">
+            <h5 class="mb-3"><i class="bi bi-plus-circle me-2"></i>Request New Report</h5>
+            <form id="request-report-form">
+              <div id="selected-report-info" class="alert alert-info mb-3" style="display: none;">
+                <div class="d-flex align-items-start">
+                  <i class="bi bi-info-circle me-2 mt-1"></i>
+                  <div>
+                    <strong id="selected-report-name"></strong>
+                    <p class="mb-0 small" id="selected-report-description"></p>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <label class="form-label" for="report-start-date">
+                    <i class="bi bi-calendar me-1"></i>Start Date
+                  </label>
+                  <input type="date" class="form-control" id="report-start-date">
+                  <small class="text-muted">Leave empty for default (last 30 days)</small>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="report-end-date">
+                    <i class="bi bi-calendar me-1"></i>End Date
+                  </label>
+                  <input type="date" class="form-control" id="report-end-date">
+                  <small class="text-muted">Leave empty for today</small>
+                </div>
+              </div>
+              
+              <button type="submit" class="btn btn-primary" disabled id="btn-request-report">
+                <i class="bi bi-file-earmark-plus me-2"></i>Request Report
+              </button>
+            </form>
+          </div>
+
+          <!-- Recent Reports -->
+          <div class="report-card mt-4">
+            <h5 class="mb-3"><i class="bi bi-clock-history me-2"></i>Recent Reports</h5>
+            <div class="table-responsive">
+              <table class="table table-hover mb-0">
+                <thead>
+                  <tr>
+                    <th>Report Type</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-reports-table">
+                  <tr>
+                    <td colspan="4" class="text-center text-muted py-4">
+                      <i class="bi bi-inbox display-6 d-block mb-2 opacity-50"></i>
+                      <p class="mb-0">No reports yet. Request a report to get started.</p>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="../../static/js/reports.js"></script>
+</body>
+</html>

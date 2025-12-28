@@ -1,27 +1,80 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from .common import Base, engine, SessionLocal, models
-from .routers import orders, inventory, dashboard, platforms, connections, sync_logs, reports
+from .apps.common import Base, engine, SessionLocal, models
+from .apps.oms.routers import orders, inventory, dashboard, platforms, connections, sync_logs, reports, auth
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Multi-Platform E-commerce OMS")
 
+
+origins = [
+    "http://localhost",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost:8005",
+    "http://127.0.0.1:8005",
+    "http://127.0.0.1:5501",
+    "http://localhost:5501",
+    "http://localhost:8001",
+    "http://127.0.0.1:8001",
+    "*"
+]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(dashboard.router)
-app.include_router(orders.router)
-app.include_router(inventory.router)
-app.include_router(platforms.router)
-app.include_router(connections.router)
-app.include_router(sync_logs.router)
-app.include_router(reports.router)
+app.include_router(auth.router, prefix="/oms")
+app.include_router(dashboard.router, prefix="/oms")
+app.include_router(orders.router, prefix="/oms")
+app.include_router(inventory.router, prefix="/oms")
+app.include_router(platforms.router, prefix="/oms")
+app.include_router(connections.router, prefix="/oms")
+app.include_router(sync_logs.router, prefix="/oms")
+app.include_router(sync_logs.router, prefix="/oms")
+app.include_router(reports.router, prefix="/oms")
+
+from .apps.oms.routers import settings
+app.include_router(settings.router, prefix="/oms")
+
+from .apps.mango.routers import inventory as mango_inventory
+app.include_router(mango_inventory.router, prefix="/mango/inventory", tags=["Mango Inventory"])
+
+from .apps.mango.routers import customers
+app.include_router(customers.router, prefix="/mango/customers", tags=["Customer Management"])
+
+from .apps.mango import dispatch_routes
+app.include_router(dispatch_routes.router, prefix="/mango", tags=["Dispatch Scanning"])
+
+from .apps.mango import channel_config_routes
+app.include_router(channel_config_routes.router, prefix="/mango", tags=["Channel Configuration"])
+
+from .apps.mango import channel_import_routes
+app.include_router(channel_import_routes.router, prefix="/mango", tags=["Channel Import"])
+
+from .apps.mango import channel_orders_routes
+app.include_router(channel_orders_routes.router, prefix="/mango", tags=["Channel Orders"])
+
+from .apps.mango import oms_sync_routes
+app.include_router(oms_sync_routes.router, prefix="/mango", tags=["OMS Sync"])
+
+
+
+
+
+# Mount frontend directory
+import os
+frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+if os.path.exists(frontend_dir):
+    app.mount("/frontend", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
 
 
 @app.on_event("startup")
@@ -47,6 +100,31 @@ def init_platforms():
                 )
                 db.add(platform)
         
+        # Init Apps
+        default_apps = [
+            {"name": "Order Management System", "code": "oms", "description": "Centralize orders from Amazon, Flipkart, etc."},
+            {"name": "Mango", "code": "mango", "description": "Advanced multi-warehouse inventory management."},
+            {"name": "Jaimini Intelligence", "code": "jaimini", "description": "AI-powered analytics and forecasting."},
+            {"name": "Global Settings", "code": "settings", "description": "Organization and User Management."}
+        ]
+        
+        for app_data in default_apps:
+            existing = db.query(models.Application).filter_by(code=app_data["code"]).first()
+            if existing:
+                # Update if changed
+                if existing.name != app_data["name"] or existing.description != app_data["description"]:
+                    existing.name = app_data["name"]
+                    existing.description = app_data["description"]
+                    db.add(existing)
+            else:
+                application = models.Application(
+                    name=app_data["name"],
+                    code=app_data["code"],
+                    description=app_data["description"],
+                    is_active=1
+                )
+                db.add(application)
+
         db.commit()
     except Exception as e:
         print(f"Error initializing platforms: {e}")

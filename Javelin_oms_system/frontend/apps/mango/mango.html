@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mango Platform - Javelin Suite</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css"
+    />
+    <link rel="stylesheet" href="../../static/css/style.css" />
+    <script src="../../static/js/auth-check.js"></script>
+    <style>
+      :root {
+        --mango-primary: #007bff; /* Zoho-like Blue */
+        --mango-primary-hover: #0056b3;
+        --mango-surface: #ffffff;
+        --mango-bg: #f3f3f3; /* Very light gray */
+        --mango-border: #e0e0e0;
+        --text-main: #333333;
+        --text-muted: #666666;
+        --sidebar-width: 240px;
+      }
+
+      body {
+        background-color: var(--mango-bg);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        color: var(--text-main);
+        font-size: 13px; /* Compact base font */
+      }
+
+      /* --- Compact Sidebar --- */
+      .sidebar {
+        width: var(--sidebar-width);
+        background: #f8f9fa; /* Light gray sidebar like reference */
+        border-right: 1px solid var(--mango-border);
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 1000;
+        overflow-y: auto;
+        padding-top: 10px;
+      }
+
+      .sidebar-header {
+        padding: 0 15px 15px;
+        margin-bottom: 5px;
+      }
+
+      .sidebar-brand {
+        font-size: 16px;
+        font-weight: 600;
+        color: #000;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .nav-section-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #999;
+        padding: 8px 15px 4px;
+        letter-spacing: 0.5px;
+        display: block;
+      }
+
+      .nav-link {
+        padding: 6px 15px; /* Compact padding */
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 0; /* Remove hefty radius */
+        border-left: 3px solid transparent;
+        transition: all 0.1s;
+        font-weight: 400;
+      }
+
+      .nav-link i {
+        font-size: 14px;
+        color: var(--text-muted);
+        width: 18px;
+        text-align: center;
+      }
+
+      .nav-link:hover {
+        background-color: #e9ecef;
+        color: #000;
+      }
+
+      .nav-link.active {
+        background-color: #e6f0ff; /* Light blue active bg */
+        color: var(--mango-primary);
+        border-left-color: var(--mango-primary);
+        font-weight: 500;
+      }
+      .nav-link.active i {
+        color: var(--mango-primary);
+      }
+
+      /* Sub-menu refinements */
+      #inventorySubmenu .nav-link,
+      #internalFlowSubmenu .nav-link {
+        padding-left: 45px;
+        font-size: 12px;
+      }
+      #internalFlowSubmenu .nav-link {
+        padding-left: 60px;
+      }
+
+      /* --- Main Content Layout --- */
+      .main-wrapper {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .top-navbar {
+        background: #1e293b; /* Dark Slate Blue (Zoho-like) */
+        border-bottom: 1px solid #334155;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 15px;
+        color: #fff;
+        position: sticky;
+        top: 0;
+        z-index: 1000; /* Above sidebar */
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+
+      .header-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 200px;
+      }
+      .header-brand-icon {
+        font-size: 1.2rem;
+        color: #fff;
+      }
+      .header-module-name {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #f1f5f9;
+        letter-spacing: 0.5px;
+      }
+
+      /* Universal Search */
+      .universal-search-container {
+        flex: 1;
+        max-width: 600px;
+        position: relative;
+        margin: 0 20px;
+      }
+      .universal-search-input {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        color: #fff;
+        padding: 8px 40px 8px 12px;
+        width: 100%;
+        font-size: 0.9rem;
+        transition: all 0.2s ease;
+      }
+      .universal-search-input:focus {
+        background: rgba(255, 255, 255, 0.15);
+        border-color: rgba(255, 255, 255, 0.5);
+        outline: none;
+        color: #fff;
+      }
+      .universal-search-input::placeholder {
+        color: rgba(255, 255, 255, 0.5);
+      }
+      .search-icon-overlay {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: rgba(255, 255, 255, 0.5);
+        pointer-events: none;
+      }
+
+      /* Header Actions */
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+      .company-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #cbd5e1;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+      }
+      .company-label:hover {
+        color: #fff;
+      }
+
+      .action-btn {
+        background: transparent;
+        border: none;
+        color: #cbd5e1;
+        font-size: 1.2rem;
+        padding: 6px;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: color 0.2s, background 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+      }
+      .action-btn:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .btn-quick-create {
+        background: #3b82f6; /* Bright Blue */
+        color: #fff;
+        border-radius: 6px;
+        width: 34px;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+        border: none;
+        transition: background 0.2s;
+        padding-bottom: 4px; /* Center alignment adjustment */
+      }
+      .btn-quick-create:hover {
+        background: #2563eb;
+        color: #fff;
+      }
+
+      .user-profile-dropdown {
+        cursor: pointer;
+      }
+      .user-avatar-header {
+        width: 32px;
+        height: 32px;
+        background: #10b981; /* Default avatar color */
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+
+      .main-content {
+        padding: 20px;
+        flex: 1;
+        background: var(--mango-surface); /* White canvas style */
+        margin: 15px; /* Floating paper effect */
+        border: 1px solid var(--mango-border);
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+      }
+
+      /* --- Premium Dashboard Styles (Restored) --- */
+      .dashboard-card {
+        background: #ffffff;
+        border: 1px solid rgba(0, 0, 0, 0.05); /* Subtle border */
+        border-radius: 16px; /* Modern rounded corners */
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03); /* Soft, premium shadow */
+        transition: transform 0.2s, box-shadow 0.2s;
+        overflow: hidden;
+      }
+      .dashboard-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.06);
+      }
+
+      .kpi-value {
+        font-family: "Outfit", sans-serif;
+        font-weight: 700;
+        font-size: 2.2rem;
+        letter-spacing: -0.02em;
+        color: #1a1a1a;
+        line-height: 1.2;
+      }
+
+      .kpi-label {
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #888;
+        margin-bottom: 0.5rem;
+      }
+
+      /* Modern Gradient Accents */
+      .bg-gradient-primary-soft {
+        background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
+        color: #0369a1;
+      }
+      .bg-gradient-success-soft {
+        background: linear-gradient(135deg, #dcfce7 0%, #f0fdf4 100%);
+        color: #15803d;
+      }
+      .bg-gradient-warning-soft {
+        background: linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%);
+        color: #b45309;
+      }
+
+      /* Search Input Premium */
+      .search-input-group {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 8px 16px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+        transition: all 0.2s;
+      }
+      .search-input-group:focus-within {
+        border-color: var(--mango-primary);
+        box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+      }
+      .search-input-group input {
+        border: none;
+        outline: none;
+        width: 100%;
+        padding: 5px;
+        font-size: 0.95rem;
+        background: transparent;
+      }
+      /* Quick Create Mega Menu */
+      .quick-create-menu {
+        position: absolute;
+        top: 60px;
+        right: 20px;
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        padding: 25px;
+        display: none;
+        z-index: 1100;
+        width: 1000px;
+        max-width: 95vw;
+        color: #333;
+      }
+
+      .quick-create-menu.show {
+        display: grid;
+      }
+
+      /* Compact sidebar header */
+      .sidebar-header {
+        padding: 0 12px 10px;
+        margin-bottom: 5px;
+      }
+
+      .sidebar-brand {
+        font-size: 18px;
+        font-weight: 700;
+        color: #000;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      /* Compact section titles */
+      .nav-section-title {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #999;
+        padding: 12px 12px 4px;
+        letter-spacing: 0.5px;
+        display: block;
+        margin: 0;
+      }
+
+      /* Compact navigation links */
+      .nav-link {
+        padding: 6px 12px;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 0;
+        border-left: 3px solid transparent;
+        transition: all 0.1s;
+        font-weight: 400;
+        font-size: 14px;
+        margin: 1px 0;
+      }
+
+      .nav-link i {
+        font-size: 16px;
+        color: var(--text-muted);
+        width: 18px;
+        text-align: center;
+      }
+
+      .nav-link:hover {
+        background-color: #f0f0f0;
+        color: #000;
+        border-left-color: var(--mango-primary);
+      }
+
+      .nav-link.active {
+        background-color: #e8f0fe;
+        border-left-color: var(--mango-primary);
+        color: var(--mango-primary);
+        font-weight: 500;
+      }
+
+      /* Professional sidebar nav */
+      .sidebar-nav {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .quick-create-menu.show {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 20px;
+        animation: slideDown 0.2s ease-out;
+      }
+      .qc-column-header {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #888;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .qc-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        color: #333;
+        font-size: 0.9rem;
+        border-radius: 4px;
+        text-decoration: none;
+        transition: all 0.1s;
+        cursor: pointer;
+        margin-bottom: 2px;
+      }
+      .qc-item:hover {
+        background: #eef2ff;
+        color: var(--mango-primary);
+      }
+      .qc-item i {
+        font-size: 10px;
+        color: #aaa;
+      }
+      .qc-item:hover i {
+        color: var(--mango-primary);
+      }
+
+      .sidebar-nav {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .sidebar-nav .nav-item {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .sidebar-nav .nav-link {
+        display: flex;
+        align-items: center;
+        padding: 7px 12px;
+        color: var(--text-main);
+        text-decoration: none;
+        border-radius: 0;
+        margin: 0;
+        transition: all 0.15s;
+        font-size: 14px;
+        border-left: 3px solid transparent;
+        white-space: nowrap;
+      }
+
+      .sidebar-nav .nav-link:hover {
+        background: #f5f5f5;
+        color: var(--mango-primary);
+        border-left-color: var(--mango-primary);
+      }
+
+      .sidebar-nav .nav-link.active {
+        background: #e8f0fe;
+        color: var(--mango-primary);
+        font-weight: 500;
+        border-left-color: var(--mango-primary);
+      }
+
+      /* Compact submenu styling */
+      .submenu {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        background: #fafafa;
+      }
+
+      .submenu .nav-item {
+        list-style: none;
+        margin: 0;
+      }
+
+      .submenu-link {
+        padding: 5px 12px 5px 40px !important;
+        font-size: 13px;
+        border-left: 3px solid transparent !important;
+        white-space: nowrap !important;
+      }
+
+      .submenu-link:hover {
+        background: #efefef !important;
+      }
+
+      /* Collapse icon positioning */
+      .nav-link .bi-chevron-down {
+        margin-left: auto;
+        font-size: 12px;
+        transition: transform 0.2s;
+      }
+
+      .nav-link:not(.collapsed) .bi-chevron-down {
+        transform: rotate(180deg);
+      }
+
+      @keyframes slideDown {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-brand">
+          <i class="bi bi-lightning-charge-fill text-primary"></i>
+          <span class="brand-text">Javelin Suite</span>
+        </div>
+        <button class="sidebar-toggle d-lg-none" id="sidebar-close">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <span class="nav-section-title">Operations</span>
+          <a
+            href="#overview"
+            class="nav-link active"
+            onclick="loadSection('overview')"
+          >
+            <i class="bi bi-grid-1x2"></i>
+            <span>Overview</span>
+          </a>
+          <!-- Inventory with Sub-menu -->
+          <a
+            href="#inventorySubmenu"
+            class="nav-link d-flex justify-content-between align-items-center"
+            data-bs-toggle="collapse"
+            role="button"
+            aria-expanded="false"
+            aria-controls="inventorySubmenu"
+          >
+            <span><i class="bi bi-box-seam me-2"></i>Inventory</span>
+            <i class="bi bi-chevron-down small"></i>
+          </a>
+          <div class="collapse" id="inventorySubmenu">
+            <ul class="nav flex-column ms-3">
+              <li class="nav-item">
+                <a
+                  href="#inventory_view"
+                  class="nav-link"
+                  onclick="loadSection('inventory_view')"
+                >
+                  <span>View</span>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a
+                  href="#inventory_items"
+                  class="nav-link"
+                  onclick="loadSection('inventory_items')"
+                >
+                  <span>Items</span>
+                </a>
+              </li>
+
+              <!-- Internal Flow Sub-menu -->
+              <a
+                href="#internalFlowSubmenu"
+                class="nav-link d-flex justify-content-between align-items-center"
+                data-bs-toggle="collapse"
+                role="button"
+                aria-expanded="false"
+                aria-controls="internalFlowSubmenu"
+              >
+                <span>Internal Flow</span>
+                <i class="bi bi-chevron-down small"></i>
+              </a>
+              <div class="collapse" id="internalFlowSubmenu">
+                <ul class="nav flex-column ms-3">
+                  <li class="nav-item">
+                    <a
+                      href="#inv_transfer"
+                      class="nav-link"
+                      onclick="loadSection('inv_transfer')"
+                    >
+                      <span>Stock Transfer</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a
+                      href="#inv_adjustment"
+                      class="nav-link"
+                      onclick="loadSection('inv_adjustment')"
+                    >
+                      <span>Adjustment</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a
+                      href="#inv_audit"
+                      class="nav-link"
+                      onclick="loadSection('inv_audit')"
+                    >
+                      <span>Audit</span>
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </ul>
+          </div>
+          <!-- Sales Module -->
+          <li class="nav-item">
+            <a
+              class="nav-link collapsed d-flex align-items-center justify-content-between"
+              data-bs-toggle="collapse"
+              href="#salesSubmenu"
+              role="button"
+            >
+              <span><i class="bi bi-cart-check me-2"></i>Sales</span>
+              <i class="bi bi-chevron-down"></i>
+            </a>
+            <ul class="collapse submenu" id="salesSubmenu">
+              <li>
+                <a
+                  class="nav-link submenu-link"
+                  href="#"
+                  onclick="loadSection('sales_customers'); return false;"
+                >
+                  <i class="bi bi-people me-2"></i>Customers
+                </a>
+              </li>
+              <li>
+                <a
+                  class="nav-link submenu-link"
+                  href="#"
+                  onclick="loadSection('sales_quotes'); return false;"
+                >
+                  <i class="bi bi-file-text me-2"></i>Quotes
+                </a>
+              </li>
+
+              <!-- Dispatch Record (Collapsible) -->
+              <li>
+                <a
+                  class="nav-link submenu-link"
+                  href="#"
+                  data-bs-toggle="collapse"
+                  data-bs-target="#dispatchSubmenu"
+                  aria-expanded="false"
+                >
+                  <i class="bi bi-truck me-2"></i>Dispatch Record
+                  <i class="bi bi-chevron-down ms-auto"></i>
+                </a>
+                <ul class="collapse list-unstyled ps-4" id="dispatchSubmenu">
+                  <li>
+                    <a
+                      class="nav-link submenu-link"
+                      href="#"
+                      onclick="loadSection('dispatch_scanner'); return false;"
+                    >
+                      <i class="bi bi-upc-scan me-2"></i>Dispatch Scanner
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      class="nav-link submenu-link"
+                      href="#"
+                      onclick="loadSection('dispatch_reports'); return false;"
+                    >
+                      <i class="bi bi-file-earmark-bar-graph me-2"></i>Dispatch
+                      Reports
+                    </a>
+                  </li>
+                </ul>
+              </li>
+
+              <li>
+                <a
+                  class="nav-link submenu-link"
+                  href="#"
+                  onclick="loadSection('sales_orders'); return false;"
+                >
+                  <i class="bi bi-receipt me-2"></i>Sales Orders
+                </a>
+              </li>
+              <li>
+                <a
+                  class="nav-link submenu-link"
+                  href="#"
+                  onclick="loadSection('sales_invoices'); return false;"
+                >
+                  <i class="bi bi-file-earmark-text me-2"></i>Invoices
+                </a>
+              </li>
+              <li>
+                <a
+                  class="nav-link submenu-link"
+                  href="#"
+                  onclick="loadSection('sales_recurring_invoices'); return false;"
+                >
+                  <i class="bi bi-arrow-repeat me-2"></i>Recurring Invoices
+                </a>
+              </li>
+              <li>
+                <a
+                  class="nav-link submenu-link"
+                  href="#"
+                  onclick="loadSection('sales_delivery_challans'); return false;"
+                >
+                  <i class="bi bi-truck me-2"></i>Delivery Challans
+                </a>
+              </li>
+              <li>
+                <a
+                  class="nav-link submenu-link"
+                  href="#"
+                  onclick="loadSection('sales_payments'); return false;"
+                >
+                  <i class="bi bi-cash-coin me-2"></i>Payments Received
+                </a>
+              </li>
+              <li>
+                <a
+                  class="nav-link submenu-link"
+                  href="#"
+                  onclick="loadSection('sales_credit_notes'); return false;"
+                >
+                  <i class="bi bi-file-minus me-2"></i>Credit Notes
+                </a>
+              </li>
+              <li>
+                <a
+                  class="nav-link submenu-link"
+                  href="#"
+                  onclick="loadSection('sales_eway_bills'); return false;"
+                >
+                  <i class="bi bi-file-earmark-code me-2"></i>e-Way Bills
+                </a>
+              </li>
+            </ul>
+          </li>
+
+          <a href="#return" class="nav-link" onclick="loadSection('return')">
+            <i class="bi bi-arrow-return-left"></i>
+            <span>Return</span>
+          </a>
+          <a
+            href="#purchase"
+            class="nav-link"
+            onclick="loadSection('purchase')"
+          >
+            <i class="bi bi-cart-plus"></i>
+            <span>Purchase</span>
+          </a>
+          <a href="#payment" class="nav-link" onclick="loadSection('payment')">
+            <i class="bi bi-credit-card"></i>
+            <span>Payment</span>
+          </a>
+          <a
+            href="#tracking"
+            class="nav-link"
+            onclick="loadSection('tracking')"
+          >
+            <i class="bi bi-search"></i>
+            <span>Deep Track</span>
+          </a>
+          <a href="#flow" class="nav-link" onclick="loadSection('flow')">
+            <i class="bi bi-kanban"></i>
+            <span>Flow Manager</span>
+          </a>
+        </div>
+
+        <div class="nav-section">
+          <span class="nav-section-title">System</span>
+          <a href="#config" class="nav-link" onclick="loadSection('config')">
+            <i class="bi bi-sliders"></i>
+            <span>Configuration</span>
+          </a>
+          <a href="#design" class="nav-link" onclick="loadSection('design')">
+            <i class="bi bi-palette"></i>
+            <span>Design</span>
+          </a>
+          <a
+            href="#settings"
+            class="nav-link"
+            onclick="loadSection('settings')"
+          >
+            <i class="bi bi-gear"></i>
+            <span>Settings</span>
+          </a>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar">
+            <i class="bi bi-person-circle"></i>
+          </div>
+          <div class="user-details">
+            <span class="user-name">Admin User</span>
+            <span class="user-role">Suite Admin</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-wrapper">
+      <nav class="top-navbar">
+        <!-- Brand / Mobile Toggle -->
+        <div class="d-flex align-items-center gap-3">
+          <button
+            class="sidebar-toggle d-lg-none text-white bg-transparent border-0 p-0"
+            id="sidebar-open"
+          >
+            <i class="bi bi-list fs-4"></i>
+          </button>
+          <div class="header-brand">
+            <!-- Replaced "Mango Platform" with Icon + Module Name -->
+            <i class="bi bi-box-seam-fill header-brand-icon"></i>
+            <span class="header-module-name">Mango</span>
+            <i
+              class="bi bi-caret-down-fill text-muted"
+              style="font-size: 0.7rem"
+            ></i>
+          </div>
+        </div>
+
+        <!-- Universal Search -->
+        <div class="universal-search-container d-none d-md-block">
+          <input
+            type="text"
+            class="universal-search-input"
+            placeholder="Search in Inventory ( / )"
+          />
+          <i class="bi bi-search search-icon-overlay"></i>
+        </div>
+
+        <!-- Right Actions -->
+        <div class="header-actions">
+          <!-- Home Button -->
+          <a href="../../index.html" class="action-btn" title="Back to Home">
+            <i class="bi bi-house-door-fill"></i>
+          </a>
+
+          <!-- Company Selector -->
+          <div
+            class="company-label d-none d-lg-flex"
+            title="Switch Organization"
+          >
+            <span id="active-company-name">JAVELIN OPERATIONS</span>
+            <i class="bi bi-chevron-down small"></i>
+            <span class="mx-2 text-muted">|</span>
+          </div>
+
+          <!-- Quick Create -->
+          <button
+            class="btn-quick-create"
+            title="Quick Create"
+            onclick="handleQuickCreate()"
+          >
+            +
+          </button>
+
+          <!-- Icons -->
+          <button class="action-btn" title="Notifications">
+            <i class="bi bi-bell"></i>
+          </button>
+          <button class="action-btn" title="Settings">
+            <i class="bi bi-gear"></i>
+          </button>
+
+          <!-- User Profile -->
+          <div class="dropdown user-profile-dropdown">
+            <div class="user-avatar-header" data-bs-toggle="dropdown">
+              <i class="bi bi-person-fill"></i>
+            </div>
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2">
+              <li><h6 class="dropdown-header">Suraj Jha</h6></li>
+              <li>
+                <a class="dropdown-item" href="#"
+                  ><i class="bi bi-person me-2"></i>My Profile</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" onclick="openCompanyModal()"
+                  ><i class="bi bi-building me-2"></i>Organization</a
+                >
+              </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a class="dropdown-item text-danger" href="#"
+                  ><i class="bi bi-box-arrow-right me-2"></i>Sign Out</a
+                >
+              </li>
+            </ul>
+          </div>
+
+          <!-- App Grid -->
+          <button class="action-btn" title="Javelin Apps">
+            <i class="bi bi-grid-3x3-gap"></i>
+          </button>
+        </div>
+      </nav>
+
+      <!-- Quick Create Mega Menu -->
+      <div class="quick-create-menu" id="quickCreateMenu">
+        <!-- Column 1: GENERAL -->
+        <div>
+          <div class="qc-column-header"><i class="bi bi-grid"></i> GENERAL</div>
+          <a onclick="handleQcAction('user')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Add User</a
+          >
+          <a onclick="handleQcAction('item')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Item</a
+          >
+          <a onclick="handleQcAction('journal')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Journal Entry</a
+          >
+          <a onclick="handleQcAction('log_time')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Log Time</a
+          >
+          <a onclick="handleQcAction('weekly_log')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Weekly Log</a
+          >
+        </div>
+
+        <!-- Column 2: INVENTORY -->
+        <div>
+          <div class="qc-column-header">
+            <i class="bi bi-box-seam"></i> INVENTORY
+          </div>
+          <a onclick="handleQcAction('adjustment')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Inventory Adjustments</a
+          >
+          <a onclick="handleQcAction('warehouse')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Create Warehouse</a
+          >
+        </div>
+
+        <!-- Column 3: SALES -->
+        <div>
+          <div class="qc-column-header"><i class="bi bi-cart"></i> SALES</div>
+          <a onclick="handleQcAction('customer')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Customer</a
+          >
+          <a onclick="handleQcAction('quote')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Quotes</a
+          >
+          <a onclick="handleQcAction('challan')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Delivery Challan</a
+          >
+          <a onclick="handleQcAction('invoice')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Invoices</a
+          >
+          <a onclick="handleQcAction('recurring_invoice')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Recurring Invoice</a
+          >
+          <a onclick="handleQcAction('retail_invoice')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Retail Invoice</a
+          >
+          <a onclick="handleQcAction('sales_order')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Sales Order</a
+          >
+          <a onclick="handleQcAction('customer_payment')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Customer Payment</a
+          >
+          <a onclick="handleQcAction('credit_note')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Credit Notes</a
+          >
+        </div>
+
+        <!-- Column 4: PURCHASES -->
+        <div>
+          <div class="qc-column-header">
+            <i class="bi bi-bag"></i> PURCHASES
+          </div>
+          <a onclick="handleQcAction('vendor')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Vendor</a
+          >
+          <a onclick="handleQcAction('expense')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Expenses</a
+          >
+          <a onclick="handleQcAction('recurring_expense')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Recurring Expense</a
+          >
+          <a onclick="handleQcAction('bill')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Bill</a
+          >
+          <a onclick="handleQcAction('recurring_bill')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Recurring Bill</a
+          >
+          <a onclick="handleQcAction('po')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Purchase Order</a
+          >
+          <a onclick="handleQcAction('vendor_payment')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Vendor Payment</a
+          >
+          <a onclick="handleQcAction('vendor_credit')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Vendor Credit</a
+          >
+        </div>
+
+        <!-- Column 5: BANKING -->
+        <div>
+          <div class="qc-column-header"><i class="bi bi-bank"></i> BANKING</div>
+          <a onclick="handleQcAction('bank_transfer')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Bank Transfer</a
+          >
+          <a onclick="handleQcAction('card_payment')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Card Payment</a
+          >
+          <a onclick="handleQcAction('owner_drawing')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Owner Drawings</a
+          >
+          <a onclick="handleQcAction('other_income')" class="qc-item"
+            ><i class="bi bi-plus-circle-fill"></i> Other Income</a
+          >
+        </div>
+      </div>
+
+      <main class="main-content">
+        <div id="dynamic-content">
+          <!-- Content will be loaded by mango.js -->
+          <div
+            class="d-flex justify-content-center align-items-center"
+            style="height: 60vh"
+          >
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Company Details Modal -->
+    <div
+      class="modal fade"
+      id="companyDetailsModal"
+      tabindex="-1"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header bg-white border-bottom">
+            <h5 class="modal-title fw-bold text-dark">
+              <i class="bi bi-building me-2 text-primary"></i>Organization
+              Profile
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body p-4 bg-light">
+            <div class="text-center mb-4">
+              <div
+                class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center mb-3 shadow-sm"
+                style="
+                  width: 64px;
+                  height: 64px;
+                  font-size: 1.5rem;
+                  font-weight: bold;
+                "
+              >
+                <i class="bi bi-building"></i>
+              </div>
+              <h4 class="fw-bold text-dark mb-1" id="modal-comp-name">
+                Loading...
+              </h4>
+              <span
+                class="badge bg-success-subtle text-success px-3 rounded-pill"
+                >Active Workspace</span
+              >
+            </div>
+
+            <div class="card border-0 shadow-sm mb-3">
+              <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                  <div
+                    class="text-muted small text-uppercase fw-bold"
+                    style="width: 80px"
+                  >
+                    Code
+                  </div>
+                  <div class="text-dark fw-medium" id="modal-comp-code">-</div>
+                </div>
+                <div class="d-flex align-items-center mb-3">
+                  <div
+                    class="text-muted small text-uppercase fw-bold"
+                    style="width: 80px"
+                  >
+                    Address
+                  </div>
+                  <div class="text-dark fw-medium" id="modal-comp-address">
+                    -
+                  </div>
+                </div>
+                <div class="d-flex align-items-center mb-3">
+                  <div
+                    class="text-muted small text-uppercase fw-bold"
+                    style="width: 80px"
+                  >
+                    Contact
+                  </div>
+                  <div class="text-dark">
+                    <div id="modal-comp-email"></div>
+                    <div id="modal-comp-phone"></div>
+                    <div id="modal-comp-website"></div>
+                  </div>
+                </div>
+                <div class="d-flex align-items-center">
+                  <div
+                    class="text-muted small text-uppercase fw-bold"
+                    style="width: 80px"
+                  >
+                    Settings
+                  </div>
+                  <div class="d-flex gap-2">
+                    <span
+                      class="badge bg-light text-secondary border"
+                      id="modal-comp-curr"
+                      >INR</span
+                    >
+                    <span
+                      class="badge bg-light text-secondary border"
+                      id="modal-comp-tz"
+                      >IST</span
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="text-center">
+              <small class="text-muted">Managed via Javelin Portal</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- jQuery (for legacy compat if needed) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- SweetAlert2 for premium alerts -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Module Stubs (prevent errors for unimplemented features) -->
+    <script src="../../static/js/module_stubs.js"></script>
+    <!-- Main Scripts -->
+    <script src="../../static/js/mango.js?v=51"></script>
+    <!-- Stock Transfer Approval Workflow -->
+    <script src="../../static/js/stock_transfer_workflow.js?v=1"></script>
+    <!-- Advanced Table Entry System -->
+    <script src="../../static/js/stock_transfer_advanced_table.js?v=1"></script>
+    <!-- Warehouse Validation -->
+    <script src="../../static/js/warehouse_validation.js"></script>
+    <!-- Customer Management Module -->
+    <script src="../../static/js/customer_module.js?v=1"></script>
+    <!-- Customer Form -->
+    <script src="../../static/js/customer_form.js"></script>
+    <script src="../../static/js/customer_form_handlers.js"></script>
+    <!-- Customer Detail View -->
+    <script src="../../static/js/customer_detail_view.js?v=4"></script>
+    <!-- Channel Mapping -->
+    <script src="../../static/js/channel_mapping.js"></script>
+    <!-- html5-qrcode Library for Barcode Scanning -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- Dispatch Scanner -->
+    <script src="../../static/js/dispatch_scanner.js"></script>
+    <script src="../../static/js/dispatch_reports.js"></script>
+    <!-- Channel Order Import -->
+    <script src="../../static/js/channel_orders.js"></script>
+    <!-- Channel Settings -->
+    <script src="../../static/js/channel_settings.js"></script>
+    <script>
+      // Simple sidebar toggle for mobile
+      document.getElementById("sidebar-open")?.addEventListener("click", () => {
+        document.getElementById("sidebar")?.classList.add("open");
+      });
+      document
+        .getElementById("sidebar-close")
+        ?.addEventListener("click", () => {
+          document.getElementById("sidebar")?.classList.remove("open");
+        });
+    </script>
+  </body>
+</html>

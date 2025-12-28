@@ -1,5 +1,5 @@
 // Reports page JavaScript
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = "http://127.0.0.1:8000/oms";
 
 let platforms = [];
 let selectedPlatform = null;
@@ -362,6 +362,15 @@ async function loadRecentReports(platformId) {
     const tbody = document.getElementById('recent-reports-table');
     if (!tbody) return;
     
+    // Check if using mock data and show notification
+    if (res.data.mock_data) {
+      showAlert('warning', `
+        <strong>Using Mock Data</strong><br>
+        ${res.data.message}
+        <a href="connections.html" class="alert-link ms-2">Update Credentials</a>
+      `);
+    }
+    
     if (!res.data.reports || res.data.reports.length === 0) {
       tbody.innerHTML = `
         <tr>
@@ -426,6 +435,7 @@ async function loadRecentReports(platformId) {
       `;
       tbody.appendChild(tr);
     });
+    
     
   } catch (err) {
     console.error("Failed to load recent reports", err);
