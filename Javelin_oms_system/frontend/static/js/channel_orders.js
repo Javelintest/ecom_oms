@@ -606,7 +606,7 @@ async function uploadFile() {
     formData.append("platform", channelOrderState.selectedPlatform);
 
     const response = await axios.post(
-      `${API_BASE_URL}/channel/import-orders`,
+      `${API_BASE_URL}/api/mango/channels/import-orders`,
       formData,
       {
         headers: {
@@ -720,10 +720,13 @@ async function confirmImport() {
   });
 
   try {
-    const response = await axios.post(`${API_BASE_URL}/channel/import`, {
-      file_id: channelOrderState.previewData.file_id,
-      platform: channelOrderState.selectedPlatform,
-    });
+    const response = await axios.post(
+      `${API_BASE_URL}/api/mango/channels/import`,
+      {
+        file_id: channelOrderState.previewData.file_id,
+        platform: channelOrderState.selectedPlatform,
+      }
+    );
 
     Swal.fire({
       icon: "success",
@@ -774,7 +777,9 @@ async function loadImportHistory() {
   });
 
   try {
-    const response = await axios.get(`${API_BASE_URL}/channel/imports`);
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/imports`
+    );
 
     const historyHTML = `
       <div class="table-responsive">
@@ -961,9 +966,12 @@ async function loadChannelFields() {
   }
 
   try {
-    const response = await axios.get(`${API_BASE_URL}/channel/fields`, {
-      params: { platform },
-    });
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/fields`,
+      {
+        params: { platform },
+      }
+    );
 
     renderCustomFields(response.data.fields || []);
     renderColumnMappings(response.data.mappings || []);
@@ -1145,7 +1153,7 @@ async function addCustomField() {
 
   if (formValues) {
     try {
-      await axios.post(`${API_BASE_URL}/channel/fields`, {
+      await axios.post(`${API_BASE_URL}/api/mango/channels/fields`, {
         platform,
         ...formValues,
       });
@@ -1185,7 +1193,9 @@ async function deleteCustomField(fieldId) {
 
   if (result.isConfirmed) {
     try {
-      await axios.delete(`${API_BASE_URL}/channel/fields/${fieldId}`);
+      await axios.delete(
+        `${API_BASE_URL}/api/mango/channels/fields/${fieldId}`
+      );
       Swal.fire({
         icon: "success",
         title: "Deleted!",
@@ -1255,7 +1265,7 @@ async function uploadAndImportOrders() {
     formData.append("file", file);
 
     const response = await axios.post(
-      `${API_BASE_URL}/channel/import-orders?platform=${platform}`,
+      `${API_BASE_URL}/api/mango/channels/import-orders?platform=${platform}`,
       formData,
       {
         headers: {
@@ -1314,7 +1324,9 @@ const orderListState = {
  */
 async function loadOrders() {
   try {
-    const response = await axios.get(`${API_BASE_URL}/channel/orders`);
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/orders`
+    );
     orderListState.orders = response.data.orders || [];
     orderListState.filteredOrders = [...orderListState.orders];
     renderOrdersTable();

@@ -36,7 +36,9 @@ async function viewCustomer(customerId, initialTab = "summary") {
 
   try {
     // Fetch customer data
-    const response = await axios.get(`${API_BASE_URL}/customers/${customerId}`);
+    const response = await axios.get(
+      `${API_BASE_URL}/mango/customers/${customerId}`
+    );
     customerDetailState.customer = response.data;
 
     // Render the detail view
@@ -456,7 +458,7 @@ async function renderCustomerLedgerTab(container) {
   try {
     // Fetch balance and aging data
     const response = await axios.get(
-      `${API_BASE_URL}/customers/${customerId}/balance`
+      `${API_BASE_URL}/mango/customers/${customerId}/balance`
     );
     customerDetailState.balance = response.data;
 
@@ -765,7 +767,7 @@ async function renderCustomerTransactionsTab(container) {
   try {
     // Fetch ledger transactions
     const response = await axios.get(
-      `${API_BASE_URL}/customers/${customerId}/ledger`
+      `${API_BASE_URL}/mango/customers/${customerId}/ledger`
     );
     customerDetailState.ledger = response.data;
 

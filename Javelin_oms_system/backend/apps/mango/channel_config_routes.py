@@ -363,3 +363,97 @@ async def get_mappings(
             for m in mappings
         ]
     }
+
+# Update field definition with schema constraints
+@router.put("/config/fields/{field_id}")
+async def update_field_constraints(
+    field_id: int,
+    field_data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update field definition including schema management constraints"""
+    field = db.query(ChannelFieldDefinition).filter(
+        ChannelFieldDefinition.id == field_id,
+        ChannelFieldDefinition.company_id == current_user.company_id
+    ).first()
+    
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found")
+    
+    # Update basic fields
+    if "field_name" in field_data:
+        field.field_name = field_data["field_name"]
+    if "field_key" in field_data:
+        field.field_key = field_data["field_key"]
+    if "field_type" in field_data:
+        field.field_type = field_data["field_type"]
+    if "is_required" in field_data:
+        field.is_required = field_data["is_required"]
+    
+    # Update schema management fields
+    if "is_primary_key" in field_data:
+        field.is_primary_key = field_data["is_primary_key"]
+    if "is_unique" in field_data:
+        field.is_unique = field_data["is_unique"]
+    if "is_indexed" in field_data:
+        field.is_indexed = field_data["is_indexed"]
+    if "foreign_key_table" in field_data:
+        field.foreign_key_table = field_data["foreign_key_table"]
+    if "foreign_key_field" in field_data:
+        field.foreign_key_field = field_data["foreign_key_field"]
+    if "on_duplicate" in field_data:
+        field.on_duplicate = field_data["on_duplicate"]
+    
+    db.commit()
+    db.refresh(field)
+    
+    return {
+        "success": True,
+        "field": {
+            "id": field.id,
+            "field_name": field.field_name,
+            "field_key": field.field_key,
+            "field_type": field.field_type,
+            "is_required": field.is_required,
+            "is_primary_key": field.is_primary_key,
+            "is_unique": field.is_unique,
+            "is_indexed": field.is_indexed,
+            "foreign_key_table": field.foreign_key_table,
+            "foreign_key_field": field.foreign_key_field,
+            "on_duplicate": field.on_duplicate
+        }
+    }
+
+# Add Schema Validation Endpoint
+@router.get("/validate-schema")
+async def validate_schema(
+    platform: str = Query(..., description="Platform name"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Validate schema configuration for a platform"""
+    from .schema_validator import SchemaValidator
+    
+    validator = SchemaValidator(db)
+    result = validator.validate_schema(platform, current_user.company_id)
+    
+    return result
+
+
+# Get Available Foreign Key Tables
+@router.get("/foreign-key-tables")
+async def get_foreign_key_tables(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get list of available tables for foreign key relationships"""
+    # Define available reference tables
+    tables = [
+        {"name": "customers", "label": "Customers", "pk": "id"},
+        {"name": "products", "label": "Products", "pk": "sku"},
+        {"name": "warehouses", "label": "Warehouses", "pk": "id"},
+        {"name": "users", "label": "Users", "pk": "id"}
+    ]
+    
+    return {"tables": tables}

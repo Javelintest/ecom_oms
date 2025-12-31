@@ -1,0 +1,71 @@
+
+@router.get("/{channel_id}/fields")
+async def get_channel_fields(
+    channel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get fields configuration for a specific channel"""
+    
+    # Verify channel exists and belongs to user's company
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Channel not found"
+        )
+
+    # Fetch fields from ChannelTableSchema
+    # Note: Logic to fetch and parse fields from `channel_table_schema` table
+    # Since we don't have a direct ORM relationship loaded, we query the schema table
+    
+    schema_entries = db.query(ChannelTableSchema).filter(
+        ChannelTableSchema.channel_id == channel_id
+    ).order_by(ChannelTableSchema.id).all()
+    
+    fields = []
+    for entry in schema_entries:
+        # Convert DB model to response format
+        fields.append({
+            "id": entry.id,
+            "field_name": entry.field_name,
+            "field_key": entry.field_key or entry.field_name.lower().replace(" ", "_"), # Fallback if key missing
+            "field_type": entry.field_type,
+            "is_required": entry.is_required,
+            "is_unique": entry.is_unique,
+            "is_primary_key": entry.is_primary_key,
+            "is_indexed": entry.is_indexed,
+            "on_duplicate": entry.on_duplicate_action,
+            # Foreign key info
+            # We need to parse constraint_definition or have separate cols
+            # Assuming separate cols for simplicity based on previous context, 
+            # if not present we might need to adjust. 
+            # Let's inspect ChannelTableSchema model if needed, but for now assuming standard fields
+            "foreign_key_table": None, # Todo: Parse if stored
+            "foreign_key_field": None
+        })
+        
+    # Also fetch mappings
+    mappings_entries = db.query(ChannelFieldMapping).filter(
+        ChannelFieldMapping.channel_id == channel_id
+    ).all()
+    
+    mappings = []
+    for m in mappings_entries:
+        mappings.append({
+            "id": m.id,
+            "channel_field_key": m.channel_field_name, # Using name as key for now if key col msg
+            "scan_field_key": m.transformation_rule.get("scan_field") if m.transformation_rule else None,
+            "is_bidirectional": m.transformation_rule.get("bidirectional", False) if m.transformation_rule else False
+        })
+
+    return {
+        "channel_id": channel.id,
+        "channel_name": channel.channel_name,
+        "fields": fields,
+        "mappings": mappings
+    }

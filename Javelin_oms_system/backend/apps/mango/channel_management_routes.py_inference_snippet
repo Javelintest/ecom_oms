@@ -1,0 +1,140 @@
+
+# ---------------------------------------------------------
+# Bulk Schema Inference Routes
+# ---------------------------------------------------------
+
+from pydantic import BaseModel
+from fastapi import UploadFile, File, Form
+import csv
+import io
+import re
+
+class SQLInferenceRequest(BaseModel):
+    sql_text: str
+
+@router.post("/{channel_id}/schema/infer-sql")
+async def infer_schema_from_sql(
+    channel_id: int,
+    request: SQLInferenceRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Infer fields from a CREATE TABLE SQL statement"""
+    sql = request.sql_text
+    fields = []
+    
+    # Simple regex to find column definitions inside parenthesis
+    # Matches: field_name field_type ... ,
+    # This is a basic parser and might need refinement for complex SQL
+    
+    # 1. Extract content between first ( and last )
+    match = re.search(r'\((.*)\)', sql, re.DOTALL)
+    if not match:
+        raise HTTPException(status_code=400, detail="Invalid CREATE TABLE syntax: Could not find column definitions.")
+    
+    columns_str = match.group(1)
+    
+    # 2. Split by comma, but respect parentheses (for DECIMAL(10,2))
+    # A simple split by comma might break on types like DECIMAL(5,2)
+    # So we normalize commas inside parentheses first
+    
+    # Placeholder for comma inside parens to avoid split usage
+    columns_str_clean = re.sub(r'\(([^)]+),([^)]+)\)', r'(\1|\2)', columns_str)
+    
+    lines = [line.strip() for line in columns_str_clean.split(',')]
+    
+    possible_types = {
+        'INT': 'Number', 'INTEGER': 'Number', 'BIGINT': 'Number', 'SMALLINT': 'Number', 'TINYINT': 'Number',
+        'DECIMAL': 'Number', 'NUMERIC': 'Number', 'FLOAT': 'Number', 'DOUBLE': 'Number',
+        'VARCHAR': 'Text', 'CHAR': 'Text', 'TEXT': 'Text', 'STRING': 'Text',
+        'BOOLEAN': 'Select', 'BOOL': 'Select', 'BIT': 'Select',
+        'DATE': 'Date', 'DATETIME': 'Date', 'TIMESTAMP': 'Date',
+        'JSON': 'Text'
+    }
+
+    for line in lines:
+        if not line or line.upper().startswith(('PRIMARY', 'KEY', 'CONSTRAINT', 'UNIQUE', 'INDEX')):
+            continue
+            
+        parts = line.split()
+        if len(parts) >= 2:
+            field_name = parts[0].strip('`"[]')
+            sql_type = parts[1].split('(')[0].upper() # Remove length e.g. VARCHAR(255) -> VARCHAR
+            
+            # Map SQL type to Mango type
+            mongo_type = 'Text' # Default
+            for key, val in possible_types.items():
+                if key in sql_type:
+                    mongo_type = val
+                    break
+            
+            # Check constraints
+            is_req = 'NOT NULL' in line.upper()
+            is_pk = 'PRIMARY KEY' in line.upper()
+            
+            fields.append({
+                "field_name": field_name,
+                "field_key": field_name.lower(),
+                "field_type": mongo_type,
+                "is_required": is_req,
+                "is_primary_key": is_pk,
+                "is_unique": False,
+                "is_indexed": False
+            })
+
+    return {"fields": fields}
+
+
+@router.post("/{channel_id}/schema/infer-file")
+async def infer_schema_from_file(
+    channel_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """Infer fields from CSV Header"""
+    if not file.filename.endswith('.csv'):
+         raise HTTPException(status_code=400, detail="Only CSV files are supported for now.")
+    
+    content = await file.read()
+    decoded = content.decode('utf-8')
+    
+    # Parse CSV
+    try:
+        f = io.StringIO(decoded)
+        reader = csv.reader(f)
+        headers = next(reader) # Get first row
+        
+        # Try to get second row for type inference
+        sample_data = None
+        try:
+            sample_data = next(reader)
+        except StopIteration:
+            pass
+            
+    except Exception as e:
+         raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+         
+    fields = []
+    for i, header in enumerate(headers):
+        field_name = header.strip()
+        field_type = "Text"
+        
+        # Infer type from sample data if available
+        if sample_data and len(sample_data) > i:
+            val = sample_data[i]
+            if val.isdigit():
+                field_type = "Number"
+            elif val.lower() in ['true', 'false', 'yes', 'no']:
+                 field_type = "Select"
+            # Basic date check could go here
+            
+        fields.append({
+            "field_name": field_name,
+            "field_key": field_name.lower().replace(" ", "_"),
+            "field_type": field_type,
+            "is_required": False,
+            "is_primary_key": False, 
+            "is_unique": False,
+            "is_indexed": False
+        })
+        
+    return {"fields": fields}

@@ -833,6 +833,15 @@
             <i class="bi bi-sliders"></i>
             <span>Configuration</span>
           </a>
+          <a
+            href="#channel_settings"
+            class="nav-link"
+            onclick="loadSection('channel_settings')"
+            style="padding-left: 35px"
+          >
+            <i class="bi bi-diagram-3"></i>
+            <span>Channels</span>
+          </a>
           <a href="#design" class="nav-link" onclick="loadSection('design')">
             <i class="bi bi-palette"></i>
             <span>Design</span>
@@ -1210,7 +1219,7 @@
     <!-- Module Stubs (prevent errors for unimplemented features) -->
     <script src="../../static/js/module_stubs.js"></script>
     <!-- Main Scripts -->
-    <script src="../../static/js/mango.js?v=51"></script>
+    <script src="../../static/js/mango.js?v=8"></script>
     <!-- Stock Transfer Approval Workflow -->
     <script src="../../static/js/stock_transfer_workflow.js?v=1"></script>
     <!-- Advanced Table Entry System -->
@@ -1234,7 +1243,9 @@
     <!-- Channel Order Import -->
     <script src="../../static/js/channel_orders.js"></script>
     <!-- Channel Settings -->
-    <script src="../../static/js/channel_settings.js"></script>
+    <script src="../../static/js/channel_settings.js?v=12"></script>
+    <script src="../../static/js/channel_builder_enhanced_ui.js?v=1"></script>
+    <script src="../../static/js/channel_management.js?v=2"></script>
     <script>
       // Simple sidebar toggle for mobile
       document.getElementById("sidebar-open")?.addEventListener("click", () => {

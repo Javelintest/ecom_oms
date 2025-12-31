@@ -65,8 +65,12 @@ app.include_router(channel_orders_routes.router, prefix="/mango", tags=["Channel
 from .apps.mango import oms_sync_routes
 app.include_router(oms_sync_routes.router, prefix="/mango", tags=["OMS Sync"])
 
+# Multi-Channel Master System Routes
+from .apps.mango import channel_management_routes
+app.include_router(channel_management_routes.router, prefix="/api", tags=["Multi-Channel Management"])
 
-
+from .apps.mango import channel_upload_routes
+app.include_router(channel_upload_routes.router, prefix="/api", tags=["Multi-Channel Upload"])
 
 
 # Mount frontend directory
@@ -140,3 +144,15 @@ def root():
         "version": "2.0",
         "supported_platforms": ["amazon", "flipkart", "meesho", "myntra"]
     }
+
+# Developer Panel Routes (Protected - requires developer role)
+from .apps.dev import panel_routes as dev_panel
+from .apps.dev import data_routes as dev_data
+app.include_router(dev_panel.router, prefix="/api", tags=["Developer Panel"])
+app.include_router(dev_data.router, prefix="/api", tags=["Developer Panel - Data"])
+
+
+# Mount frontend static files (Must be last to avoid hiding API routes)
+import os
+frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")

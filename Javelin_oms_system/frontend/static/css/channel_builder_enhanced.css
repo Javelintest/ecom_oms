@@ -1,0 +1,327 @@
+/**
+ * Enhanced Channel Builder UI - Custom Styles
+ * Professional, modern, accessible design
+ */
+
+/* Gradient animations for headers */
+@keyframes gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.bg-gradient {
+  background-size: 200% 200%;
+  animation: gradient 3s ease infinite;
+}
+
+/* Enhanced modal styling */
+#createChannelModal .modal-content,
+#enhancedFieldModal .modal-content {
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+#createChannelModal .modal-header,
+#enhancedFieldModal .modal-header {
+  padding: 1.5rem 2rem;
+}
+
+#createChannelModal .modal-body,
+#enhancedFieldModal .modal-body {
+  padding: 0 !important;
+}
+
+/* Card styling */
+.card {
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+}
+
+.card-header {
+  border-radius: 8px 8px 0 0 !important;
+  font-weight: 600;
+}
+
+/* Button styling */
+.btn {
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.btn-lg {
+  padding: 0.75rem 1.5rem;
+  font-size: 1.1rem;
+}
+
+/* Visual type selector */
+#type-selector-grid .btn-check:checked + label {
+  background-color: #0d6efd !important;
+  color: white !important;
+  border-color: #0d6efd !important;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+#type-selector-grid label {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#type-selector-grid label:hover {
+  background-color: #f8f9fa;
+  border-color: #0d6efd !important;
+}
+
+/* Validation type selector */
+[name="validation-type"] + label {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+[name="validation-type"]:checked + label {
+  background-color: #198754 !important;
+  color: white !important;
+  border-color: #198754 !important;
+}
+
+[name="validation-type"] + label:hover {
+  background-color: #f8f9fa;
+  border-color: #198754 !important;
+}
+
+/* Tab styling */
+.nav-tabs {
+  border-bottom: 2px solid #dee2e6 !important;
+}
+
+.nav-tabs .nav-link {
+  border: none !important;
+  color: #6c757d;
+  font-weight: 500;
+  padding: 1rem 1.5rem;
+  transition: all 0.2s ease;
+}
+
+.nav-tabs .nav-link:hover {
+  color: #0d6efd;
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+.nav-tabs .nav-link.active {
+  color: #0d6efd !important;
+  background-color: white !important;
+  border-bottom: 3px solid #0d6efd !important;
+  margin-bottom: -2px;
+}
+
+/* Form controls */
+.form-control,
+.form-select {
+  border-radius: 6px;
+  border: 2px solid #dee2e6;
+  transition: all 0.2s ease;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #0d6efd;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
+}
+
+.form-control-lg {
+  padding: 0.75rem 1rem;
+  font-size: 1.1rem;
+}
+
+/* Switch styling */
+.form-check-input {
+  cursor: pointer;
+}
+
+.form-check-input:checked {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+
+/* Badge styling */
+.badge {
+  font-weight: 500;
+  padding: 0.35em 0.65em;
+  border-radius: 4px;
+}
+
+/* Alert styling */
+.alert {
+  border-radius: 8px;
+  border: none;
+}
+
+.alert-info {
+  background-color: #cfe2ff;
+  color: #084298;
+}
+
+.alert-success {
+  background-color: #d1e7dd;
+  color: #0f5132;
+}
+
+.alert-warning {
+  background-color: #fff3cd;
+  color: #664d03;
+}
+
+.alert-danger {
+  background-color: #f8d7da;
+  color: #842029;
+}
+
+/* Field container Cards */
+#custom-fields-container .card {
+  border-left-width: 3px !important;
+  transition: all 0.3s ease;
+}
+
+#custom-fields-container .card:hover {
+  border-left-color: #0d6efd !important;
+  transform: translateX(4px);
+}
+
+/* Progress indicator */
+.progress-step {
+  position: relative;
+}
+
+.progress-step::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 2px;
+  background-color: #dee2e6;
+  z-index: -1;
+}
+
+/* Code blocks */
+code {
+  background-color: #f8f9fa;
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.9em;
+  color: #d63384;
+}
+
+/* Empty state */
+.min-height-100 {
+  min-height: 100px;
+}
+
+#custom-fields-container:empty::after {
+  content: 'No fields added yet. Click "Add Field" to get started.';
+  display: block;
+  text-align: center;
+  padding: 3rem;
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal.show {
+  animation: fadeIn 0.3s ease;
+}
+
+.card {
+  animation: fadeIn 0.4s ease;
+}
+
+/* Smooth scrolling */
+.modal-body {
+  scroll-behavior: smooth;
+}
+
+/* Accessibility improvements */
+.btn:focus-visible,
+.form-control:focus-visible,
+.form-select:focus-visible {
+  outline: 3px solid #0d6efd;
+  outline-offset: 2px;
+}
+
+/* Tooltip styling */
+[title] {
+  cursor: help;
+}
+
+/* Loading state */
+.btn.loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.btn.loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin-left: -8px;
+  margin-top: -8px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  #createChannelModal .modal-dialog,
+  #enhancedFieldModal .modal-dialog {
+    margin: 0.5rem;
+    max-width: calc(100% - 1rem);
+  }
+  
+  #type-selector-grid .col-md-3,
+  [name="validation-type"] + label {
+    margin-bottom: 0.5rem;
+  }
+  
+  .modal-body {
+    max-height: 60vh !important;
+  }
+}
+
+/* Print styles */
+@media print {
+  .modal {
+    display: none !important;
+  }
+}

@@ -1,0 +1,32 @@
+INFO:     Will watch for changes in these directories: ['/Users/surajjha/Desktop/S Code/01_Jav_Order_M_OMS/Javelin_oms_system']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [19328] using StatReload
+/Users/surajjha/Desktop/S Code/01_Jav_Order_M_OMS/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/surajjha/Desktop/S Code/01_Jav_Order_M_OMS/.venv/lib/python3.9/site-packages/pydantic/_internal/_config.py:383: UserWarning: Valid config keys have changed in V2:
+* 'orm_mode' has been renamed to 'from_attributes'
+  warnings.warn(message, UserWarning)
+INFO:     Started server process [19331]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:62999 - "GET /frontend/apps/mango/mango.html HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:62999 - "GET /frontend/static/js/mango.js?v=51 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:62999 - "GET /frontend/static/js/channel_orders.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:62999 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63001 - "GET /frontend/static/js/channel_settings.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:63003 - "OPTIONS /mango/channel/fields?platform=amazon HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63004 - "OPTIONS /oms/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63005 - "GET /oms/auth/me HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:63003 - "GET /mango/channel/fields?platform=amazon HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:63001 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63052 - "POST /oms/auth/login HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:63077 - "POST /oms/auth/login HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:63108 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63139 - "POST /oms/auth/login HTTP/1.1" 401 Unauthorized
+WARNING:  StatReload detected changes in 'backend/apps/common/db.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [19331]
+/Users/surajjha/Desktop/S Code/01_Jav_Order_M_OMS/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(

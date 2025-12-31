@@ -1,5 +1,5 @@
 // Mango Platform JavaScript (Light Mode Enforced)
-const API_BASE_URL = "http://127.0.0.1:8000/mango";
+const API_BASE_URL = "http://127.0.0.1:8000";
 const ROOT_API_URL = "http://127.0.0.1:8000"; // For non-mango global apps (OMS, Settings)
 
 // Configure Axios base URL
@@ -76,6 +76,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
+// Handle Hash Change (Router)
+window.addEventListener("hashchange", () => {
+  let hash = window.location.hash.substring(1);
+  if (hash.startsWith("/")) hash = hash.substring(1);
+  loadSection(hash || "overview");
+});
+
 // Header Action Handlers
 function handleQuickCreate() {
   const menu = document.getElementById("quickCreateMenu");
@@ -96,9 +103,7 @@ async function fetchCompanyInfo() {
     const token = localStorage.getItem("access_token");
     if (!token) return;
 
-    const res = await axios.get(
-      `${API_BASE_URL.replace("/mango", "/oms")}/auth/me`
-    );
+    const res = await axios.get(`${ROOT_API_URL}/oms/auth/me`);
     const user = res.data;
 
     if (!user.company_id) {
@@ -107,7 +112,7 @@ async function fetchCompanyInfo() {
       try {
         // Fetch available companies
         const companiesRes = await axios.get(
-          `${API_BASE_URL.replace("/mango", "/oms")}/auth/my-companies`
+          `${ROOT_API_URL}/oms/auth/my-companies`
         );
         const companies = companiesRes.data;
 
@@ -119,9 +124,7 @@ async function fetchCompanyInfo() {
           );
 
           await axios.post(
-            `${API_BASE_URL.replace("/mango", "/oms")}/auth/switch-company/${
-              targetCompany.id
-            }`
+            `${ROOT_API_URL}/oms/auth/switch-company/${targetCompany.id}`
           );
 
           // Refresh page to load new context
@@ -347,7 +350,7 @@ function loadSection(sectionId) {
       break;
     case "channel_settings":
       if (typeof renderChannelSettings === "function") {
-        renderChannelSettings(container);
+        renderChannelSettings(container, subSection);
       }
       break;
     case "sales_payments":
@@ -378,8 +381,12 @@ function loadSection(sectionId) {
     case "flow":
       renderFlowModule(container);
       break;
-    case "config":
     case "settings":
+      // Mango Application Settings
+      container.innerHTML = `<h2>Mango Settings</h2><p>Configure your Mango application settings here.</p>`;
+      break;
+    case "config":
+      // OMS Integration Configuration
       renderSettingsModule(container, subSection);
       break;
     case "design":
@@ -653,9 +660,9 @@ async function renderInternalFlowModule(container, flowType) {
 async function renderStockTransfers(container, filterStatus = "all") {
   try {
     const [transfersRes, warehousesRes, productsRes] = await Promise.all([
-      axios.get(`${API_BASE_URL}/inventory/stock-transfers`),
-      axios.get(`${API_BASE_URL}/inventory/warehouses`),
-      axios.get(`${API_BASE_URL}/inventory/products`),
+      axios.get(`${API_BASE_URL}/mango/inventory/stock-transfers`),
+      axios.get(`${API_BASE_URL}/mango/inventory/warehouses`),
+      axios.get(`${API_BASE_URL}/mango/inventory/products`),
     ]);
 
     let transfers = transfersRes.data;
@@ -1051,7 +1058,7 @@ window.submitTransfer = async function () {
   }
 
   try {
-    await axios.post(`${API_BASE_URL}/inventory/stock-transfers`, {
+    await axios.post(`${API_BASE_URL}/mango/inventory/stock-transfers`, {
       transfer_number: transferNumber,
       source_warehouse_id: sourceWarehouse,
       destination_warehouse_id: destinationWarehouse,
@@ -1088,7 +1095,7 @@ window.completeTransfer = async function (transferId) {
   if (result.isConfirmed) {
     try {
       await axios.post(
-        `${API_BASE_URL}/inventory/stock-transfers/${transferId}/complete`
+        `${API_BASE_URL}/mango/inventory/stock-transfers/${transferId}/complete`
       );
       Swal.fire("Success", "Transfer completed successfully!", "success");
       loadSection("inv_transfer"); // Reload
@@ -1117,7 +1124,7 @@ window.cancelTransfer = async function (transferId) {
   if (result.isConfirmed) {
     try {
       await axios.delete(
-        `${API_BASE_URL}/inventory/stock-transfers/${transferId}`
+        `${API_BASE_URL}/mango/inventory/stock-transfers/${transferId}`
       );
       Swal.fire("Success", "Transfer cancelled successfully!", "success");
       loadSection("inv_transfer"); // Reload
@@ -1415,7 +1422,7 @@ window.submitGRN = async function () {
     );
 
   try {
-    await axios.post(`${API_BASE_URL}/inventory/grn`, {
+    await axios.post(`${API_BASE_URL}/mango/inventory/grn`, {
       po_id: parseInt(poId),
       grn_number: grnNo,
       vendor_invoice_no: invoice,
@@ -1497,9 +1504,9 @@ async function renderCreatePOForm() {
   try {
     // Fetch dependencies for dropdowns
     const [vendorsRes, warehousesRes, productsRes] = await Promise.all([
-      axios.get(`${API_BASE_URL}/inventory/vendors`),
-      axios.get(`${API_BASE_URL}/inventory/warehouses`),
-      axios.get(`${API_BASE_URL}/inventory/products`),
+      axios.get(`${API_BASE_URL}/mango/inventory/vendors`),
+      axios.get(`${API_BASE_URL}/mango/inventory/warehouses`),
+      axios.get(`${API_BASE_URL}/mango/inventory/products`),
     ]);
 
     const vendors = vendorsRes.data;
@@ -1752,7 +1759,7 @@ function renderInventoryDashboard(container) {
 // --- Warehouses Logic ---
 async function renderWarehouseList(container) {
   try {
-    const res = await axios.get(`${API_BASE_URL}/inventory/warehouses`);
+    const res = await axios.get(`${API_BASE_URL}/mango/inventory/warehouses`);
     const warehouses = res.data;
 
     container.innerHTML = `
@@ -1824,7 +1831,10 @@ async function showAddWarehouseModal() {
       return Swal.fire("Error", "Name and Code are required", "error");
 
     try {
-      await axios.post(`${API_BASE_URL}/inventory/warehouses`, formValues);
+      await axios.post(
+        `${API_BASE_URL}/mango/inventory/warehouses`,
+        formValues
+      );
       Swal.fire("Success", "Warehouse created successfully", "success");
       loadInventoryTabContent(); // Reload
     } catch (err) {
@@ -1836,7 +1846,7 @@ async function showAddWarehouseModal() {
 // --- Vendors Logic ---
 async function renderVendorList(container) {
   try {
-    const res = await axios.get(`${API_BASE_URL}/inventory/vendors`);
+    const res = await axios.get(`${API_BASE_URL}/mango/inventory/vendors`);
     const vendors = res.data;
 
     container.innerHTML = `
@@ -1919,7 +1929,7 @@ async function showAddVendorModal() {
       return Swal.fire("Error", "Name and Code are required", "error");
 
     try {
-      await axios.post(`${API_BASE_URL}/inventory/vendors`, formValues);
+      await axios.post(`${API_BASE_URL}/mango/inventory/vendors`, formValues);
       Swal.fire("Success", "Vendor created successfully", "success");
       loadInventoryTabContent(); // Reload
     } catch (err) {
@@ -2220,7 +2230,7 @@ async function renderProductList(container) {
   if (!container) return; // Guard
 
   try {
-    const res = await axios.get(`${API_BASE_URL}/inventory/products`);
+    const res = await axios.get(`${API_BASE_URL}/mango/inventory/products`);
     const products = res.data;
 
     const visibleCols =
@@ -2893,7 +2903,7 @@ async function submitNewItem() {
   };
 
   try {
-    await axios.post(`${API_BASE_URL}/inventory/products`, payload);
+    await axios.post(`${API_BASE_URL}/mango/inventory/products`, payload);
     Swal.fire({
       icon: "success",
       title: "Success",
@@ -2937,18 +2947,42 @@ let settingsState = {
 };
 
 // Main Entry Point
-function renderSettingsModule(container, subView = null) {
+function renderSettingsModule(container, subSection = null) {
   if (!container) container = document.getElementById("dynamic-content");
 
-  // Determine view from subView or default to dashboard
-  const view = subView || "dashboard";
-  settingsState.view = view;
+  // Render OMS Integration Configuration
+  container.innerHTML = `
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="bi bi-cloud-arrow-up me-2"></i>OMS Integration Configuration</h5>
+      </div>
+      <div class="card-body">
+        <!-- Info Section -->
+        <div class="alert alert-info mb-4">
+          <h6 class="alert-heading"><i class="bi bi-info-circle me-2"></i>Hybrid Order Management</h6>
+          <p class="mb-2">Toggle between two modes for each platform:</p>
+          <ul class="mb-2">
+            <li><strong>OMS Sync OFF (Default)</strong>: Use Excel uploads with custom fields (Mango System)</li>
+            <li><strong>OMS Sync ON</strong>: Live integration with main OMS platform for real-time orders</li>
+          </ul>
+          <small class="text-muted">You can enable different modes for different platforms!</small>
+        </div>
 
-  if (settingsState.view === "dashboard") {
-    renderSettingsDashboard(container);
-  } else {
-    renderSettingsSubModule(container);
-  }
+        <!-- Platform Toggles -->
+        <div id="oms-config-container-main">
+          <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading OMS configuration...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Load OMS config
+  loadOMSConfigMain();
 }
 
 function renderSettingsDashboard(container) {
@@ -3727,7 +3761,7 @@ async function deleteWarehouse(id, name) {
 
 async function renderVendorSettings(container) {
   try {
-    const res = await axios.get(`${API_BASE_URL}/inventory/vendors`);
+    const res = await axios.get(`${API_BASE_URL}/mango/inventory/vendors`);
     const vendors = res.data;
 
     container.innerHTML = `
@@ -3842,7 +3876,7 @@ async function showAddVendorModal() {
   });
   if (formValues) {
     try {
-      await axios.post(`${API_BASE_URL}/inventory/vendors`, formValues);
+      await axios.post(`${API_BASE_URL}/mango/inventory/vendors`, formValues);
       Swal.fire("Success", "Vendor added", "success");
       loadSettingsTabContent();
     } catch (e) {
@@ -4998,4 +5032,143 @@ function clearItemFilters() {
   if (statusFilter) statusFilter.value = "";
 
   applyItemFilters();
+}
+
+// OMS Configuration Functions (moved from channel_settings.js)
+async function loadOMSConfigMain() {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/mango/channel/oms-config`
+    );
+    renderOMSConfigMain(response.data.configs);
+  } catch (error) {
+    console.error("Error loading OMS config:", error);
+    document.getElementById("oms-config-container-main").innerHTML = `
+      <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Failed to load OMS configuration
+      </div>
+    `;
+  }
+}
+
+function renderOMSConfigMain(configs) {
+  const container = document.getElementById("oms-config-container-main");
+
+  const platformIcons = {
+    amazon: "bi-amazon",
+    flipkart: "bi-cart",
+    meesho: "bi-bag",
+    myntra: "bi-shop",
+    shopify: "bi-cart3",
+  };
+
+  const platformColors = {
+    amazon: "warning",
+    flipkart: "primary",
+    meesho: "danger",
+    myntra: "info",
+    shopify: "success",
+  };
+
+  container.innerHTML = configs
+    .map(
+      (config) => `
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="row align-items-center">
+          <div class="col-md-3">
+            <h6 class="mb-0">
+              <i class="bi ${
+                platformIcons[config.platform] || "bi-shop"
+              } me-2 text-${platformColors[config.platform]}"></i>
+              ${
+                config.platform.charAt(0).toUpperCase() +
+                config.platform.slice(1)
+              }
+            </h6>
+          </div>
+          <div class="col-md-4">
+            <div class="d-flex align-items-center">
+              <span class="badge ${
+                config.sync_enabled ? "bg-success" : "bg-secondary"
+              } me-2">
+                ${config.sync_enabled ? "🟢 OMS Sync ON" : "🔴 OMS Sync OFF"}
+              </span>
+              <small class="text-muted">
+                ${
+                  config.sync_enabled
+                    ? "Using live OMS data"
+                    : "Using Excel uploads"
+                }
+              </small>
+            </div>
+          </div>
+          <div class="col-md-3">
+            ${
+              config.last_sync_at
+                ? `
+              <small class="text-muted">
+                Last sync: ${new Date(config.last_sync_at).toLocaleString()}
+              </small>
+            `
+                : `
+              <small class="text-muted">Never synced</small>
+            `
+            }
+          </div>
+          <div class="col-md-2 text-end">
+            <div class="form-check form-switch">
+              <input 
+                class="form-check-input" 
+                type="checkbox" 
+                id="oms-toggle-main-${config.platform}"
+                ${config.sync_enabled ? "checked" : ""}
+                onchange="toggleOMSSyncMain('${config.platform}', this.checked)"
+                style="width: 3em; height: 1.5em; cursor: pointer;">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `
+    )
+    .join("");
+}
+
+async function toggleOMSSyncMain(platform, enable) {
+  const checkbox = document.getElementById(`oms-toggle-main-${platform}`);
+  const originalState = !enable;
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/channel/oms-config/toggle`,
+      {
+        platform: platform,
+        enable_sync: enable,
+      }
+    );
+
+    Swal.fire({
+      icon: "success",
+      title: `${platform.charAt(0).toUpperCase() + platform.slice(1)} ${
+        enable ? "Connected" : "Disconnected"
+      }`,
+      text: response.data.message,
+      timer: 2000,
+      showConfirmButton: false,
+    });
+
+    // Reload config to update UI
+    loadOMSConfigMain();
+  } catch (error) {
+    // Revert checkbox on error
+    checkbox.checked = originalState;
+
+    Swal.fire({
+      icon: "error",
+      title: "Toggle Failed",
+      text: error.response?.data?.detail || "Failed to toggle OMS sync",
+    });
+  }
 }

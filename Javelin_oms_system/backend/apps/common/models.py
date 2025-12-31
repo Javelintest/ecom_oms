@@ -176,6 +176,10 @@ class User(Base):
     
     is_active = Column(Integer, default=1)
     is_admin = Column(Integer, default=0)
+    is_developer = Column(Boolean, default=False)  # Developer superuser role
+    permissions = Column(JSON)  # Custom permissions
+    last_login = Column(DateTime(timezone=True))  # Track last login
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -892,6 +896,14 @@ class ChannelFieldDefinition(Base):
     created_from_upload = Column(Boolean, default=False)
     sample_value = Column(String(255))
     column_name = Column(String(100))
+    
+    # Advanced Schema Management
+    is_primary_key = Column(Boolean, default=False)
+    is_unique = Column(Boolean, default=False)
+    is_indexed = Column(Boolean, default=False)
+    foreign_key_table = Column(String(100))
+    foreign_key_field = Column(String(100))
+    on_duplicate = Column(String(20), default='skip')  # skip, update, error
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
