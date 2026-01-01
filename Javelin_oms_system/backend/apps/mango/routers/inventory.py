@@ -50,6 +50,46 @@ def create_product(prod: schemas.ProductCreate, current_user: models.User = Depe
 def get_products(current_user: models.User = Depends(require_mango), db: Session = Depends(get_db)):
     return db.query(models.Product).filter(models.Product.company_id == current_user.company_id).all()
 
+@router.get("/products/{product_id}", response_model=schemas.ProductResponse)
+def get_product(product_id: int, current_user: models.User = Depends(require_mango), db: Session = Depends(get_db)):
+    """Get a single product by ID"""
+    product = db.query(models.Product).filter(
+        models.Product.id == product_id,
+        models.Product.company_id == current_user.company_id
+    ).first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    return product
+
+
+@router.put("/products/{product_id}", response_model=schemas.ProductResponse)
+def update_product(
+    product_id: int,
+    prod_update: schemas.ProductUpdate,
+    current_user: models.User = Depends(require_mango),
+    db: Session = Depends(get_db)
+):
+    """Update an existing product"""
+    product = db.query(models.Product).filter(
+        models.Product.id == product_id,
+        models.Product.company_id == current_user.company_id
+    ).first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    # Update fields that are provided
+    update_data = prod_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(product, key, value)
+    
+    db.commit()
+    db.refresh(product)
+    return product
+
+
 @router.delete("/products/{product_id}")
 def delete_product(product_id: int, current_user: models.User = Depends(require_mango), db: Session = Depends(get_db)):
     product = db.query(models.Product).filter(

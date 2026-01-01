@@ -130,6 +130,91 @@ class ProductBase(BaseModel):
 class ProductCreate(ProductBase):
     pass
 
+class ProductUpdate(BaseModel):
+    """Schema for updating an existing product - all fields optional"""
+    sku: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    brand: Optional[str] = None
+    
+    # Financials
+    purchase_description: Optional[str] = None
+    purchase_rate: Optional[float] = None
+    sales_rate: Optional[float] = None
+    hsn_sac: Optional[str] = None
+    
+    # Tax Info
+    intra_state_tax_rate: Optional[str] = None
+    inter_state_tax_rate: Optional[str] = None
+    
+    weight_kg: Optional[float] = None
+    length_cm: Optional[float] = None
+    width_cm: Optional[float] = None
+    height_cm: Optional[float] = None
+
+    # Advanced Item Master Fields
+    item_code: Optional[str] = None
+    item_short_name: Optional[str] = None
+    item_type: Optional[str] = None
+    item_status: Optional[str] = None
+    parent_item_id: Optional[int] = None
+    item_level: Optional[int] = None
+
+    subcategory_id: Optional[int] = None
+    product_group: Optional[str] = None
+    brand_id: Optional[int] = None
+    model_no: Optional[str] = None
+    variant_group: Optional[str] = None
+
+    base_uom: Optional[str] = None
+    alternate_uom: Optional[str] = None
+    uom_conversion_factor: Optional[float] = None
+    inventory_tracking_flag: Optional[bool] = None
+    batch_tracking_flag: Optional[bool] = None
+    serial_tracking_flag: Optional[bool] = None
+    expiry_tracking_flag: Optional[bool] = None
+
+    hsn_code: Optional[str] = None
+    gst_applicable_flag: Optional[bool] = None
+    tax_category: Optional[str] = None
+    cess_applicable_flag: Optional[bool] = None
+    country_of_origin: Optional[str] = None
+
+    weight_uom: Optional[str] = None
+    dimension_uom: Optional[str] = None
+    volume: Optional[float] = None
+    color: Optional[str] = None
+    size: Optional[str] = None
+    material: Optional[str] = None
+
+    quality_grade: Optional[str] = None
+    shelf_life_days: Optional[int] = None
+    storage_type: Optional[str] = None
+    temperature_range: Optional[str] = None
+
+    costing_method: Optional[str] = None
+    standard_cost: Optional[float] = None
+    default_margin_percent: Optional[float] = None
+    price_control_type: Optional[str] = None
+
+    hazardous_flag: Optional[bool] = None
+    stackable_flag: Optional[bool] = None
+    min_order_qty: Optional[float] = None
+    max_order_qty: Optional[float] = None
+    reorder_level: Optional[float] = None
+
+    abc_classification: Optional[str] = None
+    demand_velocity: Optional[str] = None
+    forecast_enabled_flag: Optional[bool] = None
+    lifecycle_stage: Optional[str] = None
+    ai_tags: Optional[str] = None
+    search_keywords: Optional[str] = None
+    custom_attributes_json: Optional[str] = None
+
+    approved_status: Optional[str] = None
+    approved_by: Optional[int] = None
+
 class ProductResponse(ProductBase):
     id: int
     created_at: datetime

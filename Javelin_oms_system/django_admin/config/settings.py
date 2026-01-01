@@ -78,18 +78,14 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+import os
+from pathlib import Path as DjangoPath
+
+# Use SQLite for local development (same as main app)
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'javelin_oms',
-        'USER': 'root',
-        'PASSWORD': '',
-        'HOST': 'localhost',
-        'PORT': '3306',
-        'OPTIONS': {
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-            'charset': 'utf8mb4',
-        }
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': DjangoPath(__file__).resolve().parent.parent.parent / 'javelin_oms_test.db',
     }
 }
 

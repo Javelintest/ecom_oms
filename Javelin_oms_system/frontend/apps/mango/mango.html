@@ -712,7 +712,7 @@
                   <li>
                     <a
                       class="nav-link submenu-link"
-                      href="#"
+                      href="#dispatch_scanner"
                       onclick="loadSection('dispatch_scanner'); return false;"
                     >
                       <i class="bi bi-upc-scan me-2"></i>Dispatch Scanner
@@ -829,19 +829,32 @@
 
         <div class="nav-section">
           <span class="nav-section-title">System</span>
-          <a href="#config" class="nav-link" onclick="loadSection('config')">
-            <i class="bi bi-sliders"></i>
-            <span>Configuration</span>
-          </a>
+          <!-- Configuration with Sub-menu -->
           <a
-            href="#channel_settings"
-            class="nav-link"
-            onclick="loadSection('channel_settings')"
-            style="padding-left: 35px"
+            href="#configSubmenu"
+            class="nav-link d-flex justify-content-between align-items-center"
+            data-bs-toggle="collapse"
+            role="button"
+            aria-expanded="false"
+            aria-controls="configSubmenu"
           >
-            <i class="bi bi-diagram-3"></i>
-            <span>Channels</span>
+            <span><i class="bi bi-sliders me-2"></i>Configuration</span>
+            <i class="bi bi-chevron-down small"></i>
           </a>
+          <div class="collapse" id="configSubmenu">
+            <ul class="nav flex-column ms-3">
+              <li class="nav-item">
+                <a
+                  href="#channel_settings"
+                  class="nav-link"
+                  onclick="loadSection('channel_settings'); return false;"
+                >
+                  <i class="bi bi-diagram-3 me-2"></i>
+                  <span>Channels</span>
+                </a>
+              </li>
+            </ul>
+          </div>
           <a href="#design" class="nav-link" onclick="loadSection('design')">
             <i class="bi bi-palette"></i>
             <span>Design</span>
@@ -1219,7 +1232,7 @@
     <!-- Module Stubs (prevent errors for unimplemented features) -->
     <script src="../../static/js/module_stubs.js"></script>
     <!-- Main Scripts -->
-    <script src="../../static/js/mango.js?v=8"></script>
+    <script src="../../static/js/mango.js?v=13"></script>
     <!-- Stock Transfer Approval Workflow -->
     <script src="../../static/js/stock_transfer_workflow.js?v=1"></script>
     <!-- Advanced Table Entry System -->
@@ -1238,12 +1251,12 @@
     <!-- html5-qrcode Library for Barcode Scanning -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <!-- Dispatch Scanner -->
-    <script src="../../static/js/dispatch_scanner.js"></script>
+    <script src="../../static/js/dispatch_scanner.js?v=3"></script>
     <script src="../../static/js/dispatch_reports.js"></script>
     <!-- Channel Order Import -->
     <script src="../../static/js/channel_orders.js"></script>
     <!-- Channel Settings -->
-    <script src="../../static/js/channel_settings.js?v=12"></script>
+    <script src="../../static/js/channel_settings.js?v=13"></script>
     <script src="../../static/js/channel_builder_enhanced_ui.js?v=1"></script>
     <script src="../../static/js/channel_management.js?v=2"></script>
     <script>

@@ -78,9 +78,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Handle Hash Change (Router)
 window.addEventListener("hashchange", () => {
+  // Only handle hash change if not already navigating (prevents double-loading)
+  if (isNavigating) return;
+  
   let hash = window.location.hash.substring(1);
   if (hash.startsWith("/")) hash = hash.substring(1);
-  loadSection(hash || "overview");
+  if (hash) {
+    loadSection(hash);
+  }
 });
 
 // Header Action Handlers
@@ -229,11 +234,21 @@ function handleQcAction(action) {
 }
 
 // Navigation Handler with Sub-Route Support
+let isNavigating = false; // Prevent recursive navigation
+
 function loadSection(sectionId) {
   if (!sectionId) sectionId = "overview";
+  
+  // Prevent recursive calls
+  if (isNavigating) {
+    return;
+  }
+  
+  isNavigating = true;
 
   // Encode/update hash for history/refresh support
-  if (window.location.hash.substring(1) !== sectionId) {
+  const currentHash = window.location.hash.substring(1);
+  if (currentHash !== sectionId) {
     window.location.hash = sectionId;
   }
 
@@ -242,6 +257,8 @@ function loadSection(sectionId) {
   const mainSection = parts[0];
   const subSection = parts[1] || null;
   const action = parts[2] || null;
+  
+  console.log('Loading section:', sectionId, 'mainSection:', mainSection);
 
   // Update Sidebar Active State
   document.querySelectorAll(".sidebar-nav .nav-link").forEach((link) => {
@@ -339,13 +356,58 @@ function loadSection(sectionId) {
 
     // Dispatch Scanner Routes
     case "dispatch_scanner":
+      // Always set container content first to prevent default route
+      container.innerHTML = `
+        <div class="text-center py-5 fade-in">
+          <div class="spinner-border text-primary mb-3" role="status"></div>
+          <p class="text-muted">Loading Dispatch Scanner...</p>
+        </div>
+      `;
+      
+      // Check if function is available
       if (typeof renderDispatchScanner === "function") {
         renderDispatchScanner(container);
+      } else {
+        // Retry after a short delay to allow scripts to load
+        let retryCount = 0;
+        const maxRetries = 10;
+        const checkInterval = setInterval(() => {
+          retryCount++;
+          if (typeof renderDispatchScanner === "function") {
+            clearInterval(checkInterval);
+            renderDispatchScanner(container);
+          } else if (retryCount >= maxRetries) {
+            clearInterval(checkInterval);
+            container.innerHTML = `
+              <div class="text-center py-5">
+                <i class="bi bi-exclamation-triangle text-warning fs-1 mb-3"></i>
+                <h4>Dispatch Scanner Module</h4>
+                <p class="text-muted">The dispatch scanner module failed to load. Please refresh the page.</p>
+                <button class="btn btn-primary" onclick="location.reload()">
+                  <i class="bi bi-arrow-clockwise me-2"></i>Refresh Page
+                </button>
+              </div>
+            `;
+          }
+        }, 100);
       }
       break;
     case "dispatch_reports":
       if (typeof renderDispatchReports === "function") {
         renderDispatchReports(container);
+      } else {
+        container.innerHTML = `
+          <div class="text-center py-5">
+            <i class="bi bi-file-earmark-bar-graph fs-1 text-primary mb-3"></i>
+            <h4>Dispatch Reports</h4>
+            <p class="text-muted">Loading report module...</p>
+          </div>
+        `;
+        setTimeout(() => {
+      if (typeof renderDispatchReports === "function") {
+        renderDispatchReports(container);
+          }
+        }, 500);
       }
       break;
     case "channel_settings":
@@ -392,178 +454,1358 @@ function loadSection(sectionId) {
     case "design":
       renderDesignModule(container);
       break;
+    case "custom_page":
+      renderCustomPage(container, subSection);
+      break;
     default:
       renderOverview(container);
   }
+  
+  // Reset navigation flag after a short delay
+  setTimeout(() => {
+    isNavigating = false;
+  }, 100);
 }
 
 // ================= VIEWS (Light Mode) =================
 
 // ================= VIEWS (Premium) =================
 
+// ================= ADVANCED ANALYTICS DASHBOARD =================
+// Dashboard State Management
+let dashboardState = {
+  timeframe: 'month',
+  compareEnabled: false,
+  charts: {},
+  refreshInterval: null
+};
+
 function renderOverview(container) {
   container.innerHTML = `
-        <div class="d-flex justify-content-between align-items-end mb-5 fade-in">
+    <div class="advanced-dashboard fade-in">
+      <!-- Dashboard Header with Time Controls -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
-                <h2 class="fw-bold text-dark mb-1" style="font-family: 'Outfit', sans-serif;">Overview</h2>
-                <p class="text-muted mb-0">Real-time operational intelligence.</p>
+          <h2 class="fw-bold text-dark mb-1" style="font-family: 'Outfit', sans-serif;">
+            <i class="bi bi-speedometer2 me-2 text-primary"></i>Analytics Dashboard
+          </h2>
+          <p class="text-muted mb-0">Comprehensive business intelligence & performance metrics</p>
             </div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-white border shadow-sm px-3 fw-medium rounded-pill"><i class="bi bi-download me-2"></i>Export Report</button>
-                <button class="btn btn-primary px-4 fw-medium rounded-pill shadow-sm"><i class="bi bi-plus-lg me-2"></i>New Dispute</button>
+        <div class="d-flex gap-2 align-items-center">
+          <!-- Auto Refresh Toggle -->
+          <div class="form-check form-switch me-3">
+            <input class="form-check-input" type="checkbox" id="autoRefreshToggle" onchange="toggleAutoRefresh(this.checked)">
+            <label class="form-check-label small text-muted" for="autoRefreshToggle">Auto-refresh</label>
+            </div>
+          
+          <!-- Timeframe Selector -->
+          <div class="btn-group shadow-sm" role="group">
+            <button type="button" class="btn btn-outline-secondary btn-sm ${dashboardState.timeframe === 'today' ? 'active' : ''}" onclick="changeDashboardTimeframe('today')">Today</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm ${dashboardState.timeframe === 'week' ? 'active' : ''}" onclick="changeDashboardTimeframe('week')">Week</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm ${dashboardState.timeframe === 'month' ? 'active' : ''}" onclick="changeDashboardTimeframe('month')">Month</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm ${dashboardState.timeframe === 'quarter' ? 'active' : ''}" onclick="changeDashboardTimeframe('quarter')">Quarter</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm ${dashboardState.timeframe === 'year' ? 'active' : ''}" onclick="changeDashboardTimeframe('year')">Year</button>
+        </div>
+
+          <!-- Custom Date Range -->
+          <button class="btn btn-outline-secondary btn-sm shadow-sm" onclick="openCustomDateRange()">
+            <i class="bi bi-calendar-range me-1"></i> Custom
+          </button>
+          
+          <!-- Export -->
+          <button class="btn btn-primary btn-sm shadow-sm" onclick="exportDashboardReport()">
+            <i class="bi bi-download me-1"></i> Export
+          </button>
+                        </div>
+                    </div>
+
+      <!-- Primary KPI Cards Row -->
+      <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-lg-6 col-md-6">
+          <div class="kpi-card kpi-revenue h-100">
+            <div class="kpi-card-inner">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <span class="kpi-label">Total Revenue</span>
+                  <div class="kpi-value" id="kpi-revenue">₹0</div>
+                  <div class="kpi-trend up" id="kpi-revenue-trend">
+                    <i class="bi bi-arrow-up-right"></i>
+                    <span>+0%</span>
+                    <span class="text-muted ms-1">vs last period</span>
+                  </div>
+                </div>
+                <div class="kpi-icon revenue">
+                  <i class="bi bi-currency-rupee"></i>
+                </div>
+              </div>
+              <div class="kpi-sparkline mt-3">
+                <canvas id="sparkline-revenue" height="40"></canvas>
+              </div>
+                    </div>
+                </div>
+            </div>
+            
+        <div class="col-xl-3 col-lg-6 col-md-6">
+          <div class="kpi-card kpi-orders h-100">
+            <div class="kpi-card-inner">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <span class="kpi-label">Total Orders</span>
+                  <div class="kpi-value" id="kpi-orders">0</div>
+                  <div class="kpi-trend up" id="kpi-orders-trend">
+                    <i class="bi bi-arrow-up-right"></i>
+                    <span>+0%</span>
+                    <span class="text-muted ms-1">vs last period</span>
+                        </div>
+                    </div>
+                <div class="kpi-icon orders">
+                  <i class="bi bi-bag-check"></i>
+                </div>
+              </div>
+              <div class="kpi-sparkline mt-3">
+                <canvas id="sparkline-orders" height="40"></canvas>
+              </div>
+                    </div>
+                </div>
+            </div>
+            
+        <div class="col-xl-3 col-lg-6 col-md-6">
+          <div class="kpi-card kpi-aov h-100">
+            <div class="kpi-card-inner">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <span class="kpi-label">Avg Order Value</span>
+                  <div class="kpi-value" id="kpi-aov">₹0</div>
+                  <div class="kpi-trend neutral" id="kpi-aov-trend">
+                    <i class="bi bi-dash"></i>
+                    <span>0%</span>
+                    <span class="text-muted ms-1">vs last period</span>
+                        </div>
+                    </div>
+                <div class="kpi-icon aov">
+                  <i class="bi bi-graph-up-arrow"></i>
+                </div>
+              </div>
+              <div class="kpi-sparkline mt-3">
+                <canvas id="sparkline-aov" height="40"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        <div class="col-xl-3 col-lg-6 col-md-6">
+          <div class="kpi-card kpi-inventory h-100">
+            <div class="kpi-card-inner">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <span class="kpi-label">SKUs in Stock</span>
+                  <div class="kpi-value" id="kpi-inventory">0</div>
+                  <div class="kpi-trend neutral" id="kpi-inventory-trend">
+                    <i class="bi bi-exclamation-triangle text-warning"></i>
+                    <span class="text-warning" id="low-stock-count">0 low stock</span>
+                        </div>
+                    </div>
+                <div class="kpi-icon inventory">
+                  <i class="bi bi-boxes"></i>
+                </div>
+              </div>
+              <div class="kpi-sparkline mt-3">
+                <canvas id="sparkline-inventory" height="40"></canvas>
+              </div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- KPI Grid: Premium Cards -->
-        <div class="row g-4 mb-5 fade-in">
-            <div class="col-xl-3 col-md-6">
-                <div class="dashboard-card h-100 p-4 position-relative">
-                    <div class="d-flex justify-content-between start">
-                        <div class="kpi-label">Pending Reco</div>
-                        <div class="icon-box bg-gradient-warning-soft rounded-circle p-2">
-                            <i class="bi bi-hourglass-split"></i>
-                        </div>
-                    </div>
-                    <div class="kpi-value mt-3">128</div>
-                    <div class="mt-3 d-flex align-items-center gap-2 text-danger small fw-bold">
-                         <span class="badge bg-danger bg-opacity-10 text-danger px-2 rounded-pill">-₹ 12.4k</span> Discrepancy
-                    </div>
-                </div>
+      <!-- Secondary KPI Strip -->
+      <div class="row g-3 mb-4">
+        <div class="col">
+          <div class="mini-kpi-strip d-flex gap-4 p-3 bg-white rounded-3 shadow-sm overflow-auto">
+            <div class="mini-kpi text-center px-4 border-end">
+              <div class="mini-kpi-value text-success fw-bold" id="kpi-delivered">0</div>
+              <div class="mini-kpi-label text-muted small">Delivered</div>
             </div>
-            
-            <div class="col-xl-3 col-md-6">
-                <div class="dashboard-card h-100 p-4">
-                    <div class="d-flex justify-content-between start">
-                        <div class="kpi-label">Critical Alerts</div>
-                         <div class="icon-box bg-danger bg-opacity-10 text-danger rounded-circle p-2">
-                            <i class="bi bi-bell-fill"></i>
-                        </div>
-                    </div>
-                    <div class="kpi-value mt-3">14</div>
-                    <div class="mt-3 text-muted small">
-                        Stuck in 'Manifested' > 48h
-                    </div>
-                </div>
+            <div class="mini-kpi text-center px-4 border-end">
+              <div class="mini-kpi-value text-warning fw-bold" id="kpi-processing">0</div>
+              <div class="mini-kpi-label text-muted small">Processing</div>
             </div>
-            
-            <div class="col-xl-3 col-md-6">
-                <div class="dashboard-card h-100 p-4">
-                    <div class="d-flex justify-content-between start">
-                        <div class="kpi-label">Processed Today</div>
-                        <div class="icon-box bg-gradient-success-soft rounded-circle p-2">
-                            <i class="bi bi-check-lg"></i>
-                        </div>
-                    </div>
-                    <div class="kpi-value mt-3">856</div>
-                    <div class="mt-3 pt-2">
-                        <div class="progress" style="height: 6px; border-radius: 3px;">
-                            <div class="progress-bar bg-success" role="progressbar" style="width: 75%"></div>
-                        </div>
-                    </div>
-                </div>
+            <div class="mini-kpi text-center px-4 border-end">
+              <div class="mini-kpi-value text-info fw-bold" id="kpi-shipped">0</div>
+              <div class="mini-kpi-label text-muted small">Shipped</div>
             </div>
-            
-            <div class="col-xl-3 col-md-6">
-                <div class="dashboard-card h-100 p-4">
-                    <div class="d-flex justify-content-between start">
-                        <div class="kpi-label">System Health</div>
-                        <div class="icon-box bg-gradient-primary-soft rounded-circle p-2">
-                            <i class="bi bi-cpu-fill"></i>
-                        </div>
-                    </div>
-                    <div class="kpi-value mt-3">99.9%</div>
-                    <div class="mt-3 text-success small fw-bold">
-                        <i class="bi bi-lightning-fill"></i> Latency: 45ms
-                    </div>
-                </div>
+            <div class="mini-kpi text-center px-4 border-end">
+              <div class="mini-kpi-value text-danger fw-bold" id="kpi-cancelled">0</div>
+              <div class="mini-kpi-label text-muted small">Cancelled</div>
             </div>
+            <div class="mini-kpi text-center px-4 border-end">
+              <div class="mini-kpi-value text-primary fw-bold" id="kpi-rto">0</div>
+              <div class="mini-kpi-label text-muted small">RTO</div>
+            </div>
+            <div class="mini-kpi text-center px-4">
+              <div class="mini-kpi-value fw-bold" id="kpi-fulfillment-rate">0%</div>
+              <div class="mini-kpi-label text-muted small">Fulfillment Rate</div>
+            </div>
+          </div>
         </div>
+      </div>
 
-        <div class="row fade-in">
-            <!-- Main Content -->
-            <div class="col-lg-8 mb-4">
-                <div class="dashboard-card h-100 p-0 overflow-hidden">
-                    <div class="p-4 border-bottom border-light d-flex justify-content-between align-items-center bg-light bg-opacity-50">
+      <!-- Main Charts Row -->
+      <div class="row g-4 mb-4">
+        <!-- Revenue & Orders Trend Chart -->
+        <div class="col-lg-8">
+          <div class="chart-card h-100">
+            <div class="chart-header">
                         <div>
-                            <h5 class="fw-bold mb-1 text-dark">Reconciliation Watchlist</h5>
-                            <p class="text-muted small mb-0">Orders requiring immediate attention</p>
+                <h6 class="chart-title">Revenue & Orders Trend</h6>
+                <p class="chart-subtitle">Performance over selected period</p>
                         </div>
-                        <button class="btn btn-outline-primary btn-sm rounded-pill px-3" onclick="loadSection('reco')">View All</button>
+              <div class="chart-controls">
+                <div class="btn-group btn-group-sm">
+                  <button class="btn btn-outline-secondary active" onclick="updateTrendChartType('area')">Area</button>
+                  <button class="btn btn-outline-secondary" onclick="updateTrendChartType('bar')">Bar</button>
+                  <button class="btn btn-outline-secondary" onclick="updateTrendChartType('line')">Line</button>
+                </div>
+              </div>
+            </div>
+            <div class="chart-body">
+              <canvas id="trend-chart" height="280"></canvas>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Platform Distribution -->
+        <div class="col-lg-4">
+          <div class="chart-card h-100">
+            <div class="chart-header">
+              <div>
+                <h6 class="chart-title">Channel Distribution</h6>
+                <p class="chart-subtitle">Revenue by platform</p>
+              </div>
+              <button class="btn btn-sm btn-link p-0" onclick="togglePlatformView()">
+                <i class="bi bi-gear"></i>
+              </button>
+            </div>
+            <div class="chart-body d-flex align-items-center justify-content-center">
+              <canvas id="platform-chart" height="220"></canvas>
+            </div>
+            <div class="platform-legend mt-3" id="platform-legend"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Analytics Grid -->
+      <div class="row g-4 mb-4">
+        <!-- Order Status Funnel -->
+        <div class="col-lg-4">
+          <div class="chart-card h-100">
+            <div class="chart-header">
+              <div>
+                <h6 class="chart-title">Order Status Funnel</h6>
+                <p class="chart-subtitle">Order lifecycle breakdown</p>
+              </div>
+            </div>
+            <div class="chart-body">
+              <canvas id="funnel-chart" height="250"></canvas>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Hourly Performance Heatmap -->
+        <div class="col-lg-4">
+          <div class="chart-card h-100">
+            <div class="chart-header">
+              <div>
+                <h6 class="chart-title">Peak Hours Analysis</h6>
+                <p class="chart-subtitle">Orders by hour of day</p>
+              </div>
+            </div>
+            <div class="chart-body">
+              <canvas id="hourly-chart" height="250"></canvas>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Growth Indicators -->
+        <div class="col-lg-4">
+          <div class="chart-card h-100">
+            <div class="chart-header">
+              <div>
+                <h6 class="chart-title">Growth Indicators</h6>
+                <p class="chart-subtitle">Key performance metrics</p>
+              </div>
+            </div>
+            <div class="growth-indicators p-3">
+              <div class="growth-item mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="small text-muted">Revenue Growth</span>
+                  <span class="fw-bold text-success" id="growth-revenue">+0%</span>
+                </div>
+                <div class="progress" style="height: 8px;">
+                  <div class="progress-bar bg-success" id="growth-revenue-bar" style="width: 0%"></div>
+                </div>
+              </div>
+              <div class="growth-item mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="small text-muted">Order Growth</span>
+                  <span class="fw-bold text-primary" id="growth-orders">+0%</span>
+                </div>
+                <div class="progress" style="height: 8px;">
+                  <div class="progress-bar bg-primary" id="growth-orders-bar" style="width: 0%"></div>
+                </div>
+              </div>
+              <div class="growth-item mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="small text-muted">Customer Retention</span>
+                  <span class="fw-bold text-info" id="growth-retention">0%</span>
+                </div>
+                <div class="progress" style="height: 8px;">
+                  <div class="progress-bar bg-info" id="growth-retention-bar" style="width: 0%"></div>
+                </div>
+              </div>
+              <div class="growth-item mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="small text-muted">Delivery Success Rate</span>
+                  <span class="fw-bold text-warning" id="growth-delivery">0%</span>
+                </div>
+                <div class="progress" style="height: 8px;">
+                  <div class="progress-bar bg-warning" id="growth-delivery-bar" style="width: 0%"></div>
+                </div>
+              </div>
+              <div class="growth-item">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="small text-muted">Inventory Turnover</span>
+                  <span class="fw-bold text-secondary" id="growth-turnover">0x</span>
+                </div>
+                <div class="progress" style="height: 8px;">
+                  <div class="progress-bar bg-secondary" id="growth-turnover-bar" style="width: 0%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Row - Tables & Lists -->
+      <div class="row g-4">
+        <!-- Top Selling Products -->
+        <div class="col-lg-6">
+          <div class="chart-card h-100">
+            <div class="chart-header">
+              <div>
+                <h6 class="chart-title">Top Selling Products</h6>
+                <p class="chart-subtitle">Best performers this period</p>
+              </div>
+              <button class="btn btn-sm btn-outline-primary" onclick="loadSection('inventory_items')">View All</button>
                     </div>
                     <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle">
+              <table class="table table-hover mb-0" id="top-products-table">
                             <thead class="bg-light">
                                 <tr>
-                                    <th class="ps-4 text-uppercase text-secondary small fw-bold py-3">Order Ref</th>
-                                    <th class="text-uppercase text-secondary small fw-bold">Channel</th>
-                                    <th class="text-end text-uppercase text-secondary small fw-bold">Payout</th>
-                                    <th class="text-end text-uppercase text-secondary small fw-bold">Var</th>
-                                    <th class="text-end pe-4 text-uppercase text-secondary small fw-bold">Status</th>
+                    <th class="small text-muted fw-bold">Product</th>
+                    <th class="small text-muted fw-bold text-end">Units</th>
+                    <th class="small text-muted fw-bold text-end">Revenue</th>
+                    <th class="small text-muted fw-bold text-center">Trend</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <tr>
-                                    <td class="ps-4 py-3">
-                                        <div class="fw-bold text-dark">#ORD-9921-XJY</div>
-                                        <small class="text-muted">10:23 AM</small>
-                                    </td>
-                                    <td><img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Amazon_icon.svg" width="20" alt="Amz"> Amazon</td>
-                                    <td class="text-end fw-bold">₹1,150.00</td>
-                                    <td class="text-end text-danger fw-bold">-₹50</td>
-                                    <td class="text-end pe-4"><span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2">Mismatch</span></td>
+                <tbody id="top-products-body">
+                  <tr><td colspan="4" class="text-center text-muted py-4">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Recent Orders -->
+        <div class="col-lg-6">
+          <div class="chart-card h-100">
+            <div class="chart-header">
+              <div>
+                <h6 class="chart-title">Recent Orders</h6>
+                <p class="chart-subtitle">Latest order activity</p>
+              </div>
+              <button class="btn btn-sm btn-outline-primary" onclick="loadSection('orders')">View All</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover mb-0">
+                <thead class="bg-light">
+                  <tr>
+                    <th class="small text-muted fw-bold">Order ID</th>
+                    <th class="small text-muted fw-bold">Channel</th>
+                    <th class="small text-muted fw-bold text-end">Amount</th>
+                    <th class="small text-muted fw-bold text-center">Status</th>
                                 </tr>
-                                <tr>
-                                    <td class="ps-4 py-3">
-                                        <div class="fw-bold text-dark">#ORD-3382-BKA</div>
-                                        <small class="text-muted">Yesterday</small>
-                                    </td>
-                                    <td><span class="text-primary fw-bold">Flipkart</span></td>
-                                    <td class="text-end fw-bold">₹850.00</td>
-                                    <td class="text-end text-success fw-bold">--</td>
-                                    <td class="text-end pe-4"><span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2">Matched</span></td>
-                                </tr>
+                </thead>
+                <tbody id="recent-orders-body">
+                  <tr><td colspan="4" class="text-center text-muted py-4">Loading...</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
+      </div>
+    </div>
+  `;
 
-            <!-- Quick Action Palette : Premium Card -->
-            <div class="col-lg-4 mb-4">
-                <div class="dashboard-card p-4 h-100 bg-white">
-                    <h5 class="fw-bold text-dark mb-4">Deep Track</h5>
-                    
-                    <div class="search-input-group mb-4 p-1 ps-3 border rounded-pill shadow-sm">
-                        <i class="bi bi-search text-muted"></i>
-                        <input type="text" class="ms-2 border-0 bg-transparent" placeholder="Track Order ID / AWB..." id="quick-track-input">
-                        <button class="btn btn-primary rounded-pill px-4" onclick="handleQuickTrack()">Go</button>
-                    </div>
+  // Initialize dashboard after DOM render
+  setTimeout(() => initializeDashboard(), 100);
+}
 
-                    <h6 class="text-uppercase text-secondary small fw-bold mb-3">Recently Viewed</h6>
-                    <div class="list-group list-group-flush">
-                        <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3 border-0 rounded-3 mb-2 bg-light bg-opacity-50" onclick="loadSection('tracking')">
-                            <div>
-                                <div class="fw-bold text-dark">#ORD-9921</div>
-                                <small class="text-muted">Mismatch Investigation</small>
-                            </div>
-                            <div class="bg-white p-2 rounded-circle shadow-sm">
-                                <i class="bi bi-chevron-right small"></i>
-                            </div>
-                        </button>
-                         <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3 border-0 rounded-3 bg-light bg-opacity-50" onclick="loadSection('tracking')">
-                            <div>
-                                <div class="fw-bold text-dark">#AWB-3331</div>
-                                <small class="text-muted">Stuck in Transit</small>
-                            </div>
-                             <div class="bg-white p-2 rounded-circle shadow-sm">
-                                <i class="bi bi-chevron-right small"></i>
-                            </div>
-                        </button>
+// ================= DASHBOARD INITIALIZATION =================
+async function initializeDashboard() {
+  // Add CSS styles
+  addDashboardStyles();
+  
+  // Initialize charts
+  initializeCharts();
+  
+  // Load dashboard data
+  await loadDashboardData();
+}
+
+function addDashboardStyles() {
+  if (document.getElementById('dashboard-advanced-styles')) return;
+  
+  const styles = document.createElement('style');
+  styles.id = 'dashboard-advanced-styles';
+  styles.textContent = `
+    .advanced-dashboard {
+      animation: fadeIn 0.3s ease;
+    }
+    
+    /* KPI Cards */
+    .kpi-card {
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+      border: 1px solid rgba(0,0,0,0.05);
+      transition: all 0.3s ease;
+    }
+    
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+    }
+    
+    .kpi-card .kpi-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .kpi-card .kpi-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1e293b;
+      margin: 8px 0;
+      font-family: 'Outfit', sans-serif;
+    }
+    
+    .kpi-card .kpi-trend {
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .kpi-card .kpi-trend.up { color: #10b981; }
+    .kpi-card .kpi-trend.down { color: #ef4444; }
+    .kpi-card .kpi-trend.neutral { color: #64748b; }
+    
+    .kpi-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    
+    .kpi-icon.revenue { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
+    .kpi-icon.orders { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; }
+    .kpi-icon.aov { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; }
+    .kpi-icon.inventory { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; }
+    
+    /* Mini KPI Strip */
+    .mini-kpi-strip {
+      white-space: nowrap;
+    }
+    
+    .mini-kpi-value {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    
+    /* Chart Cards */
+    .chart-card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+      border: 1px solid rgba(0,0,0,0.05);
+      overflow: hidden;
+    }
+    
+    .chart-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .chart-title {
+      font-weight: 700;
+      color: #1e293b;
+      margin: 0;
+    }
+    
+    .chart-subtitle {
+      font-size: 12px;
+      color: #64748b;
+      margin: 0;
+    }
+    
+    .chart-body {
+      padding: 16px 20px;
+    }
+    
+    /* Platform Legend */
+    .platform-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 0 20px 16px;
+      justify-content: center;
+    }
+    
+    .platform-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #64748b;
+    }
+    
+    .platform-legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    
+    /* Growth Indicators */
+    .growth-indicators .progress {
+      border-radius: 10px;
+      background: #f1f5f9;
+    }
+    
+    .growth-indicators .progress-bar {
+      border-radius: 10px;
+      transition: width 1s ease;
+    }
+    
+    /* Timeframe Buttons */
+    .btn-group .btn.active {
+      background: #3b82f6;
+      border-color: #3b82f6;
+      color: white;
+    }
+    
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes countUp {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    .kpi-value {
+      animation: countUp 0.5s ease;
+    }
+  `;
+  document.head.appendChild(styles);
+}
+
+// ================= CHART INITIALIZATION =================
+function initializeCharts() {
+  // Destroy existing charts
+  Object.values(dashboardState.charts).forEach(chart => {
+    if (chart) chart.destroy();
+  });
+  dashboardState.charts = {};
+
+  // Initialize Main Trend Chart
+  initTrendChart();
+  
+  // Initialize Platform Distribution Chart
+  initPlatformChart();
+  
+  // Initialize Order Funnel Chart
+  initFunnelChart();
+  
+  // Initialize Hourly Chart
+  initHourlyChart();
+  
+  // Initialize Sparklines
+  initSparklines();
+}
+
+function initTrendChart() {
+  const ctx = document.getElementById('trend-chart');
+  if (!ctx) return;
+  
+  const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 280);
+  gradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
+  gradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+  
+  dashboardState.charts.trend = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: 'Revenue (₹)',
+          data: [],
+          borderColor: '#3b82f6',
+          backgroundColor: gradient,
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 6,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Orders',
+          data: [],
+          borderColor: '#10b981',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [5, 5],
+          tension: 0.4,
+          pointRadius: 0,
+          pointHoverRadius: 6,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: {
+            usePointStyle: true,
+            pointStyle: 'circle',
+            padding: 20
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          titleFont: { size: 13 },
+          bodyFont: { size: 12 },
+          padding: 12,
+          cornerRadius: 8,
+          displayColors: true,
+          callbacks: {
+            label: function(context) {
+              if (context.datasetIndex === 0) {
+                return '₹' + context.parsed.y.toLocaleString('en-IN');
+              }
+              return context.parsed.y + ' orders';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { font: { size: 11 }, color: '#94a3b8' }
+        },
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          grid: { color: '#f1f5f9' },
+          ticks: {
+            font: { size: 11 },
+            color: '#94a3b8',
+            callback: value => '₹' + (value >= 1000 ? (value/1000).toFixed(0) + 'k' : value)
+          }
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: { font: { size: 11 }, color: '#94a3b8' }
+        }
+      }
+    }
+  });
+}
+
+function initPlatformChart() {
+  const ctx = document.getElementById('platform-chart');
+  if (!ctx) return;
+  
+  dashboardState.charts.platform = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Amazon', 'Flipkart', 'Meesho', 'Myntra', 'Others'],
+      datasets: [{
+        data: [35, 28, 18, 12, 7],
+        backgroundColor: [
+          '#ff9900',
+          '#2874f0',
+          '#f43397',
+          '#ff3f6c',
+          '#64748b'
+        ],
+        borderWidth: 0,
+        spacing: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '70%',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          titleFont: { size: 13 },
+          bodyFont: { size: 12 },
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: {
+            label: function(context) {
+              return context.label + ': ' + context.parsed + '%';
+            }
+          }
+        }
+      }
+    }
+  });
+  
+  // Add center text and legend
+  updatePlatformLegend();
+}
+
+function updatePlatformLegend() {
+  const legendContainer = document.getElementById('platform-legend');
+  if (!legendContainer) return;
+  
+  const platforms = [
+    { name: 'Amazon', color: '#ff9900', value: '35%' },
+    { name: 'Flipkart', color: '#2874f0', value: '28%' },
+    { name: 'Meesho', color: '#f43397', value: '18%' },
+    { name: 'Myntra', color: '#ff3f6c', value: '12%' },
+    { name: 'Others', color: '#64748b', value: '7%' }
+  ];
+  
+  legendContainer.innerHTML = platforms.map(p => `
+    <div class="platform-legend-item">
+      <span class="platform-legend-dot" style="background: ${p.color}"></span>
+      <span>${p.name}</span>
+      <span class="fw-bold">${p.value}</span>
                     </div>
+  `).join('');
+}
+
+function initFunnelChart() {
+  const ctx = document.getElementById('funnel-chart');
+  if (!ctx) return;
+  
+  dashboardState.charts.funnel = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Received', 'Processing', 'Shipped', 'Delivered', 'RTO'],
+      datasets: [{
+        data: [100, 85, 75, 68, 7],
+        backgroundColor: [
+          '#3b82f6',
+          '#8b5cf6',
+          '#06b6d4',
+          '#10b981',
+          '#ef4444'
+        ],
+        borderRadius: 8,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: {
+            label: ctx => ctx.parsed.x + ' orders'
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { display: false }
+        },
+        y: {
+          grid: { display: false },
+          ticks: { font: { size: 11 }, color: '#64748b' }
+        }
+      }
+    }
+  });
+}
+
+function initHourlyChart() {
+  const ctx = document.getElementById('hourly-chart');
+  if (!ctx) return;
+  
+  const hours = Array.from({length: 24}, (_, i) => i.toString().padStart(2, '0') + ':00');
+  const data = [2, 1, 1, 0, 0, 1, 3, 8, 15, 22, 28, 35, 42, 38, 32, 28, 35, 45, 52, 48, 35, 22, 12, 5];
+  
+  dashboardState.charts.hourly = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: hours,
+      datasets: [{
+        data: data,
+        backgroundColor: data.map(v => {
+          const intensity = v / Math.max(...data);
+          return `rgba(59, 130, 246, ${0.2 + intensity * 0.8})`;
+        }),
+        borderRadius: 4,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: {
+            title: ctx => 'Hour: ' + ctx[0].label,
+            label: ctx => ctx.parsed.y + ' orders'
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            font: { size: 9 },
+            color: '#94a3b8',
+            maxRotation: 0,
+            callback: (val, idx) => idx % 4 === 0 ? hours[idx] : ''
+          }
+        },
+        y: {
+          grid: { color: '#f1f5f9' },
+          ticks: { display: false }
+        }
+      }
+    }
+  });
+}
+
+function initSparklines() {
+  const sparklineConfig = {
+    type: 'line',
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false } },
+      elements: { point: { radius: 0 } }
+    }
+  };
+  
+  // Revenue sparkline
+  const revenueCtx = document.getElementById('sparkline-revenue');
+  if (revenueCtx) {
+    dashboardState.charts.sparkRevenue = new Chart(revenueCtx, {
+      ...sparklineConfig,
+      data: {
+        labels: Array(7).fill(''),
+        datasets: [{
+          data: [45, 52, 48, 55, 58, 62, 70],
+          borderColor: '#10b981',
+          borderWidth: 2,
+          tension: 0.4,
+          fill: false
+        }]
+      }
+    });
+  }
+  
+  // Orders sparkline
+  const ordersCtx = document.getElementById('sparkline-orders');
+  if (ordersCtx) {
+    dashboardState.charts.sparkOrders = new Chart(ordersCtx, {
+      ...sparklineConfig,
+      data: {
+        labels: Array(7).fill(''),
+        datasets: [{
+          data: [120, 135, 128, 142, 155, 148, 165],
+          borderColor: '#3b82f6',
+          borderWidth: 2,
+          tension: 0.4,
+          fill: false
+        }]
+      }
+    });
+  }
+  
+  // AOV sparkline
+  const aovCtx = document.getElementById('sparkline-aov');
+  if (aovCtx) {
+    dashboardState.charts.sparkAov = new Chart(aovCtx, {
+      ...sparklineConfig,
+      data: {
+        labels: Array(7).fill(''),
+        datasets: [{
+          data: [850, 820, 880, 860, 890, 875, 895],
+          borderColor: '#8b5cf6',
+          borderWidth: 2,
+          tension: 0.4,
+          fill: false
+        }]
+      }
+    });
+  }
+  
+  // Inventory sparkline
+  const invCtx = document.getElementById('sparkline-inventory');
+  if (invCtx) {
+    dashboardState.charts.sparkInv = new Chart(invCtx, {
+      ...sparklineConfig,
+      data: {
+        labels: Array(7).fill(''),
+        datasets: [{
+          data: [245, 238, 242, 235, 248, 252, 256],
+          borderColor: '#f59e0b',
+          borderWidth: 2,
+          tension: 0.4,
+          fill: false
+        }]
+      }
+    });
+  }
+}
+
+// ================= DATA LOADING =================
+async function loadDashboardData() {
+  try {
+    // Fetch data from APIs
+    const [productsRes, ordersRes] = await Promise.all([
+      axios.get(`${API_BASE_URL}/mango/inventory/products`).catch(() => ({ data: [] })),
+      axios.get(`${API_BASE_URL}/oms/orders`).catch(() => ({ data: [] }))
+    ]);
+    
+    const products = productsRes.data || [];
+    const orders = ordersRes.data || [];
+    
+    // Calculate KPIs
+    const totalRevenue = orders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
+    const totalOrders = orders.length;
+    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    const totalSKUs = products.length;
+    
+    // Update KPI displays with animation
+    animateValue('kpi-revenue', 0, totalRevenue, 1000, '₹');
+    animateValue('kpi-orders', 0, totalOrders, 1000);
+    animateValue('kpi-aov', 0, avgOrderValue, 1000, '₹');
+    animateValue('kpi-inventory', 0, totalSKUs, 1000);
+    
+    // Order status counts
+    const statusCounts = {
+      delivered: orders.filter(o => o.status === 'DELIVERED').length,
+      processing: orders.filter(o => o.status === 'PROCESSING' || o.status === 'PENDING').length,
+      shipped: orders.filter(o => o.status === 'SHIPPED').length,
+      cancelled: orders.filter(o => o.status === 'CANCELLED').length,
+      rto: orders.filter(o => o.status === 'RTO').length
+    };
+    
+    document.getElementById('kpi-delivered').textContent = statusCounts.delivered;
+    document.getElementById('kpi-processing').textContent = statusCounts.processing;
+    document.getElementById('kpi-shipped').textContent = statusCounts.shipped;
+    document.getElementById('kpi-cancelled').textContent = statusCounts.cancelled;
+    document.getElementById('kpi-rto').textContent = statusCounts.rto;
+    
+    // Fulfillment rate
+    const fulfillmentRate = totalOrders > 0 ? 
+      Math.round((statusCounts.delivered / totalOrders) * 100) : 0;
+    document.getElementById('kpi-fulfillment-rate').textContent = fulfillmentRate + '%';
+    
+    // Update trend chart with sample data (would be from API in production)
+    updateTrendChartData();
+    
+    // Update growth indicators
+    updateGrowthIndicators();
+    
+    // Update top products table
+    updateTopProductsTable(products);
+    
+    // Update recent orders table
+    updateRecentOrdersTable(orders);
+    
+  } catch (err) {
+    console.error('Failed to load dashboard data:', err);
+  }
+}
+
+function animateValue(elementId, start, end, duration, prefix = '') {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  
+  const startTime = performance.now();
+  
+  function update(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    
+    // Easing function
+    const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+    const current = start + (end - start) * easeOutQuart;
+    
+    el.textContent = prefix + Math.round(current).toLocaleString('en-IN');
+    
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    }
+  }
+  
+  requestAnimationFrame(update);
+}
+
+function updateTrendChartData() {
+  const chart = dashboardState.charts.trend;
+  if (!chart) return;
+  
+  // Generate labels based on timeframe
+  const labels = generateTimeLabels(dashboardState.timeframe);
+  const revenueData = generateSampleData(labels.length, 50000, 150000);
+  const ordersData = generateSampleData(labels.length, 50, 200);
+  
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = revenueData;
+  chart.data.datasets[1].data = ordersData;
+  chart.update('none');
+}
+
+function generateTimeLabels(timeframe) {
+  const now = new Date();
+  const labels = [];
+  
+  switch(timeframe) {
+    case 'today':
+      for (let i = 0; i < 24; i += 2) {
+        labels.push(i.toString().padStart(2, '0') + ':00');
+      }
+      break;
+    case 'week':
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        labels.push(days[d.getDay()]);
+      }
+      break;
+    case 'month':
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        labels.push(d.getDate().toString());
+      }
+      break;
+    case 'quarter':
+      for (let i = 12; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - (i * 7));
+        labels.push('W' + Math.ceil(d.getDate() / 7));
+      }
+      break;
+    case 'year':
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now);
+        d.setMonth(d.getMonth() - i);
+        labels.push(months[d.getMonth()]);
+      }
+      break;
+  }
+  
+  return labels;
+}
+
+function generateSampleData(length, min, max) {
+  return Array.from({length}, () => Math.floor(Math.random() * (max - min + 1)) + min);
+}
+
+function updateGrowthIndicators() {
+  const indicators = [
+    { id: 'revenue', value: '+18.5%', bar: 68 },
+    { id: 'orders', value: '+12.3%', bar: 55 },
+    { id: 'retention', value: '78%', bar: 78 },
+    { id: 'delivery', value: '94.2%', bar: 94 },
+    { id: 'turnover', value: '4.2x', bar: 42 }
+  ];
+  
+  indicators.forEach(ind => {
+    const valueEl = document.getElementById(`growth-${ind.id}`);
+    const barEl = document.getElementById(`growth-${ind.id}-bar`);
+    if (valueEl) valueEl.textContent = ind.value;
+    if (barEl) {
+      setTimeout(() => { barEl.style.width = ind.bar + '%'; }, 300);
+    }
+  });
+}
+
+function updateTopProductsTable(products) {
+  const tbody = document.getElementById('top-products-body');
+  if (!tbody) return;
+  
+  if (products.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">No products found</td></tr>`;
+    return;
+  }
+  
+  // Sort by sales_rate (using as proxy for popularity)
+  const topProducts = products
+    .sort((a, b) => (b.sales_rate || 0) - (a.sales_rate || 0))
+    .slice(0, 5);
+  
+  tbody.innerHTML = topProducts.map((p, idx) => `
+    <tr>
+      <td class="py-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-light text-dark">#${idx + 1}</span>
+                            <div>
+            <div class="fw-medium text-dark">${p.name || 'Unnamed'}</div>
+            <small class="text-muted">${p.sku || 'N/A'}</small>
+                            </div>
+                            </div>
+      </td>
+      <td class="text-end fw-medium">${Math.floor(Math.random() * 100) + 10}</td>
+      <td class="text-end fw-medium">₹${((p.sales_rate || 0) * (Math.random() * 50 + 10)).toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
+      <td class="text-center">
+        <i class="bi bi-arrow-up-right text-success"></i>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function updateRecentOrdersTable(orders) {
+  const tbody = document.getElementById('recent-orders-body');
+  if (!tbody) return;
+  
+  if (orders.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">No orders found</td></tr>`;
+    return;
+  }
+  
+  const recentOrders = orders.slice(0, 5);
+  const statusColors = {
+    'DELIVERED': 'success',
+    'SHIPPED': 'info',
+    'PROCESSING': 'warning',
+    'PENDING': 'secondary',
+    'CANCELLED': 'danger',
+    'RTO': 'danger'
+  };
+  
+  const platformIcons = {
+    'Amazon': '🛒',
+    'Flipkart': '📦',
+    'Meesho': '🛍️',
+    'Myntra': '👗'
+  };
+  
+  tbody.innerHTML = recentOrders.map(o => `
+    <tr>
+      <td class="py-2">
+        <div class="fw-medium text-dark">#${o.platform_order_id || o.id}</div>
+        <small class="text-muted">${new Date(o.created_at).toLocaleDateString()}</small>
+      </td>
+      <td>
+        <span>${platformIcons[o.platform] || '📦'} ${o.platform || 'Direct'}</span>
+      </td>
+      <td class="text-end fw-medium">₹${parseFloat(o.total_amount || 0).toLocaleString('en-IN')}</td>
+      <td class="text-center">
+        <span class="badge bg-${statusColors[o.status] || 'secondary'} bg-opacity-10 text-${statusColors[o.status] || 'secondary'}">
+          ${o.status || 'Unknown'}
+        </span>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ================= DASHBOARD CONTROLS =================
+function changeDashboardTimeframe(timeframe) {
+  dashboardState.timeframe = timeframe;
+  
+  // Update button states
+  document.querySelectorAll('.btn-group .btn').forEach(btn => {
+    btn.classList.remove('active');
+    if (btn.textContent.toLowerCase().includes(timeframe.substring(0, 3))) {
+      btn.classList.add('active');
+    }
+  });
+  
+  // Reload data
+  loadDashboardData();
+}
+
+function toggleAutoRefresh(enabled) {
+  if (enabled) {
+    dashboardState.refreshInterval = setInterval(() => {
+      loadDashboardData();
+    }, 30000); // Refresh every 30 seconds
+  } else {
+    if (dashboardState.refreshInterval) {
+      clearInterval(dashboardState.refreshInterval);
+      dashboardState.refreshInterval = null;
+    }
+  }
+}
+
+function openCustomDateRange() {
+  Swal.fire({
+    title: 'Custom Date Range',
+    html: `
+      <div class="row g-3">
+        <div class="col-6">
+          <label class="form-label small">Start Date</label>
+          <input type="date" id="custom-start" class="form-control">
+                            </div>
+        <div class="col-6">
+          <label class="form-label small">End Date</label>
+          <input type="date" id="custom-end" class="form-control">
+                            </div>
+                    </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Apply',
+    preConfirm: () => {
+      const start = document.getElementById('custom-start').value;
+      const end = document.getElementById('custom-end').value;
+      return { start, end };
+    }
+  }).then(result => {
+    if (result.isConfirmed && result.value.start && result.value.end) {
+      dashboardState.customRange = result.value;
+      dashboardState.timeframe = 'custom';
+      loadDashboardData();
+    }
+  });
+}
+
+function exportDashboardReport() {
+  Swal.fire({
+    title: 'Export Dashboard',
+    html: `
+      <div class="text-start">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="export-kpis" checked>
+          <label class="form-check-label">KPI Summary</label>
                 </div>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="export-trends" checked>
+          <label class="form-check-label">Revenue & Order Trends</label>
             </div>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="export-platforms" checked>
+          <label class="form-check-label">Platform Distribution</label>
         </div>
-    `;
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="export-products" checked>
+          <label class="form-check-label">Top Products</label>
+        </div>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: '<i class="bi bi-download me-2"></i>Export PDF',
+    cancelButtonText: 'Cancel'
+  }).then(result => {
+    if (result.isConfirmed) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Export Started',
+        text: 'Your report is being generated...',
+        timer: 2000,
+        showConfirmButton: false
+      });
+    }
+  });
+}
+
+function updateTrendChartType(type) {
+  const chart = dashboardState.charts.trend;
+  if (!chart) return;
+  
+  // Update button states
+  document.querySelectorAll('.chart-controls .btn').forEach(btn => {
+    btn.classList.remove('active');
+    if (btn.textContent.toLowerCase() === type) {
+      btn.classList.add('active');
+    }
+  });
+  
+  // Update chart type
+  if (type === 'bar') {
+    chart.config.type = 'bar';
+    chart.data.datasets[0].fill = false;
+    chart.data.datasets[0].backgroundColor = '#3b82f6';
+  } else if (type === 'line') {
+    chart.config.type = 'line';
+    chart.data.datasets[0].fill = false;
+  } else {
+    chart.config.type = 'line';
+    chart.data.datasets[0].fill = true;
+  }
+  
+  chart.update();
+}
+
+function togglePlatformView() {
+  // Toggle between revenue and orders view
+  Swal.fire({
+    title: 'Platform View Settings',
+    html: `
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="radio" name="platformView" id="view-revenue" checked>
+        <label class="form-check-label">Show by Revenue</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="radio" name="platformView" id="view-orders">
+        <label class="form-check-label">Show by Orders</label>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Apply'
+  });
 }
 
 function renderTrackingModule(container) {
@@ -2398,7 +3640,7 @@ async function renderProductList(container) {
                                           .join("")}
                                         <td class="text-end pe-4">
                                             <div class="d-flex gap-1 justify-content-end">
-                                                <button class="btn btn-sm btn-icon text-muted hover-primary" onclick="renderItemCreationForm()" title="Edit">
+                                                <button class="btn btn-sm btn-icon text-muted hover-primary" onclick="editProduct(${p.id})" title="Edit">
                                                     <i class="bi bi-pencil"></i>
                                                 </button>
                                                 <button class="btn btn-sm btn-icon text-danger hover-danger" onclick="deleteProduct(${
@@ -2933,6 +4175,1189 @@ function renderFlowModule(container) {
         </div>
     `;
 }
+
+// ================= DESIGN MODULE =================
+// State for custom dashboards and pages
+let designState = {
+  customPages: JSON.parse(localStorage.getItem('custom_dashboard_pages') || '[]'),
+  currentEditingPage: null,
+  availableWidgets: [
+    { id: 'kpi_card', name: 'KPI Card', icon: 'bi-speedometer2', category: 'metrics' },
+    { id: 'line_chart', name: 'Line Chart', icon: 'bi-graph-up', category: 'charts' },
+    { id: 'bar_chart', name: 'Bar Chart', icon: 'bi-bar-chart', category: 'charts' },
+    { id: 'pie_chart', name: 'Pie/Doughnut Chart', icon: 'bi-pie-chart', category: 'charts' },
+    { id: 'area_chart', name: 'Area Chart', icon: 'bi-graph-up-arrow', category: 'charts' },
+    { id: 'data_table', name: 'Data Table', icon: 'bi-table', category: 'data' },
+    { id: 'recent_orders', name: 'Recent Orders', icon: 'bi-bag-check', category: 'data' },
+    { id: 'top_products', name: 'Top Products', icon: 'bi-star', category: 'data' },
+    { id: 'platform_breakdown', name: 'Platform Breakdown', icon: 'bi-diagram-3', category: 'analytics' },
+    { id: 'trend_indicator', name: 'Trend Indicator', icon: 'bi-arrow-up-right', category: 'metrics' },
+    { id: 'progress_gauge', name: 'Progress Gauge', icon: 'bi-speedometer', category: 'metrics' },
+    { id: 'calendar_heatmap', name: 'Calendar Heatmap', icon: 'bi-calendar3', category: 'analytics' },
+    { id: 'text_block', name: 'Text/Notes Block', icon: 'bi-card-text', category: 'content' },
+    { id: 'image_block', name: 'Image/Logo Block', icon: 'bi-image', category: 'content' },
+  ]
+};
+
+function renderDesignModule(container) {
+  addDesignModuleStyles();
+  
+  container.innerHTML = `
+    <div class="design-module fade-in">
+      <!-- Header -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h2 class="fw-bold text-dark mb-1" style="font-family: 'Outfit', sans-serif;">
+            <i class="bi bi-palette me-2 text-primary"></i>Design Studio
+          </h2>
+          <p class="text-muted mb-0">Create custom dashboards, reports, and document templates</p>
+        </div>
+      </div>
+
+      <!-- Design Cards Grid -->
+      <div class="row g-4">
+        <!-- Dashboard Designer Card -->
+        <div class="col-lg-4 col-md-6">
+          <div class="design-card h-100" onclick="openDashboardDesigner()">
+            <div class="design-card-icon dashboard">
+              <i class="bi bi-grid-1x2"></i>
+            </div>
+            <h5 class="design-card-title">Dashboard Designer</h5>
+            <p class="design-card-desc">Create custom dashboard pages with widgets, charts, and KPIs. Add them as sub-items under Overview menu.</p>
+            <div class="design-card-stats">
+              <span class="badge bg-primary bg-opacity-10 text-primary">${designState.customPages.length} pages created</span>
+            </div>
+            <div class="design-card-action">
+              <span>Open Designer</span>
+              <i class="bi bi-arrow-right"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Invoice Template Card -->
+        <div class="col-lg-4 col-md-6">
+          <div class="design-card h-100 coming-soon">
+            <div class="design-card-icon invoice">
+              <i class="bi bi-receipt"></i>
+            </div>
+            <h5 class="design-card-title">Invoice Templates</h5>
+            <p class="design-card-desc">Design professional invoice templates with your branding, custom fields, and layouts.</p>
+            <div class="design-card-stats">
+              <span class="badge bg-secondary bg-opacity-10 text-secondary">Coming Soon</span>
+            </div>
+            <div class="design-card-action disabled">
+              <span>Coming Soon</span>
+              <i class="bi bi-clock"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Report Builder Card -->
+        <div class="col-lg-4 col-md-6">
+          <div class="design-card h-100 coming-soon">
+            <div class="design-card-icon report">
+              <i class="bi bi-file-earmark-bar-graph"></i>
+            </div>
+            <h5 class="design-card-title">Report Builder</h5>
+            <p class="design-card-desc">Build scheduled reports with custom data queries, visualizations, and export options.</p>
+            <div class="design-card-stats">
+              <span class="badge bg-secondary bg-opacity-10 text-secondary">Coming Soon</span>
+            </div>
+            <div class="design-card-action disabled">
+              <span>Coming Soon</span>
+              <i class="bi bi-clock"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Label Designer Card -->
+        <div class="col-lg-4 col-md-6">
+          <div class="design-card h-100 coming-soon">
+            <div class="design-card-icon label">
+              <i class="bi bi-upc-scan"></i>
+            </div>
+            <h5 class="design-card-title">Label Designer</h5>
+            <p class="design-card-desc">Create shipping labels, product labels, and barcode templates for printing.</p>
+            <div class="design-card-stats">
+              <span class="badge bg-secondary bg-opacity-10 text-secondary">Coming Soon</span>
+            </div>
+            <div class="design-card-action disabled">
+              <span>Coming Soon</span>
+              <i class="bi bi-clock"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Email Templates Card -->
+        <div class="col-lg-4 col-md-6">
+          <div class="design-card h-100 coming-soon">
+            <div class="design-card-icon email">
+              <i class="bi bi-envelope-paper"></i>
+            </div>
+            <h5 class="design-card-title">Email Templates</h5>
+            <p class="design-card-desc">Design email templates for order confirmations, shipping updates, and notifications.</p>
+            <div class="design-card-stats">
+              <span class="badge bg-secondary bg-opacity-10 text-secondary">Coming Soon</span>
+            </div>
+            <div class="design-card-action disabled">
+              <span>Coming Soon</span>
+              <i class="bi bi-clock"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Theme Customizer Card -->
+        <div class="col-lg-4 col-md-6">
+          <div class="design-card h-100 coming-soon">
+            <div class="design-card-icon theme">
+              <i class="bi bi-brush"></i>
+            </div>
+            <h5 class="design-card-title">Theme Customizer</h5>
+            <p class="design-card-desc">Customize the look and feel of your dashboard with colors, fonts, and branding.</p>
+            <div class="design-card-stats">
+              <span class="badge bg-secondary bg-opacity-10 text-secondary">Coming Soon</span>
+            </div>
+            <div class="design-card-action disabled">
+              <span>Coming Soon</span>
+              <i class="bi bi-clock"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Custom Pages Section -->
+      ${designState.customPages.length > 0 ? `
+        <div class="mt-5">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold mb-0">Your Custom Pages</h5>
+            <button class="btn btn-outline-primary btn-sm" onclick="openDashboardDesigner()">
+              <i class="bi bi-plus-lg me-1"></i> Create New
+            </button>
+          </div>
+          <div class="row g-3">
+            ${designState.customPages.map(page => `
+              <div class="col-lg-3 col-md-4 col-sm-6">
+                <div class="custom-page-card">
+                  <div class="custom-page-icon">
+                    <i class="bi ${page.icon || 'bi-file-earmark-bar-graph'}"></i>
+                  </div>
+                  <div class="custom-page-info">
+                    <h6 class="mb-1">${page.name}</h6>
+                    <small class="text-muted">${page.widgets?.length || 0} widgets</small>
+                  </div>
+                  <div class="custom-page-actions">
+                    <button class="btn btn-sm btn-icon" onclick="viewCustomPage('${page.id}')" title="View">
+                      <i class="bi bi-eye"></i>
+                    </button>
+                    <button class="btn btn-sm btn-icon" onclick="editCustomPage('${page.id}')" title="Edit">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-icon text-danger" onclick="deleteCustomPage('${page.id}')" title="Delete">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function addDesignModuleStyles() {
+  if (document.getElementById('design-module-styles')) return;
+  
+  const styles = document.createElement('style');
+  styles.id = 'design-module-styles';
+  styles.textContent = `
+    /* Design Cards */
+    .design-card {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+      border: 1px solid rgba(0,0,0,0.05);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .design-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.1);
+    }
+    
+    .design-card.coming-soon {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+    
+    .design-card.coming-soon:hover {
+      transform: none;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    }
+    
+    .design-card-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin-bottom: 16px;
+    }
+    
+    .design-card-icon.dashboard { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; }
+    .design-card-icon.invoice { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
+    .design-card-icon.report { background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); color: white; }
+    .design-card-icon.label { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; }
+    .design-card-icon.email { background: linear-gradient(135deg, #ec4899 0%, #be185d 100%); color: white; }
+    .design-card-icon.theme { background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); color: white; }
+    
+    .design-card-title {
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 8px;
+    }
+    
+    .design-card-desc {
+      color: #64748b;
+      font-size: 14px;
+      flex-grow: 1;
+      margin-bottom: 16px;
+    }
+    
+    .design-card-stats {
+      margin-bottom: 16px;
+    }
+    
+    .design-card-action {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 1px solid #f1f5f9;
+      color: #3b82f6;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    
+    .design-card-action.disabled {
+      color: #94a3b8;
+    }
+    
+    /* Custom Page Cards */
+    .custom-page-card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      border: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: all 0.2s ease;
+    }
+    
+    .custom-page-card:hover {
+      border-color: #3b82f6;
+      box-shadow: 0 4px 15px rgba(59,130,246,0.1);
+    }
+    
+    .custom-page-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    
+    .custom-page-info {
+      flex-grow: 1;
+    }
+    
+    .custom-page-actions {
+      display: flex;
+      gap: 4px;
+    }
+    
+    .custom-page-actions .btn-icon {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      border: none;
+      background: #f1f5f9;
+      color: #64748b;
+      transition: all 0.2s;
+    }
+    
+    .custom-page-actions .btn-icon:hover {
+      background: #e2e8f0;
+      color: #1e293b;
+    }
+    
+    .custom-page-actions .btn-icon.text-danger:hover {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+    
+    /* Dashboard Designer */
+    .dashboard-designer {
+      min-height: calc(100vh - 200px);
+    }
+    
+    .widget-palette {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      position: sticky;
+      top: 20px;
+    }
+    
+    .widget-category {
+      margin-bottom: 16px;
+    }
+    
+    .widget-category-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    
+    .widget-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: #f8fafc;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      cursor: grab;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+    
+    .widget-item:hover {
+      background: #f1f5f9;
+      border-color: #3b82f6;
+    }
+    
+    .widget-item:active {
+      cursor: grabbing;
+    }
+    
+    .widget-item-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+    
+    .widget-item-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: #334155;
+    }
+    
+    /* Canvas Area */
+    .design-canvas {
+      background: #f8fafc;
+      border: 2px dashed #e2e8f0;
+      border-radius: 12px;
+      min-height: 500px;
+      padding: 20px;
+      transition: all 0.3s;
+    }
+    
+    .design-canvas.drag-over {
+      border-color: #3b82f6;
+      background: rgba(59,130,246,0.05);
+    }
+    
+    .design-canvas.empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .canvas-placeholder {
+      text-align: center;
+      color: #94a3b8;
+    }
+    
+    .canvas-placeholder i {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+    
+    /* Placed Widgets */
+    .placed-widget {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      border: 1px solid #e2e8f0;
+      position: relative;
+      transition: all 0.2s;
+    }
+    
+    .placed-widget:hover {
+      border-color: #3b82f6;
+    }
+    
+    .placed-widget-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    
+    .placed-widget-title {
+      font-weight: 600;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .placed-widget-actions {
+      display: flex;
+      gap: 4px;
+    }
+    
+    .widget-preview {
+      min-height: 100px;
+      background: #f8fafc;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+    }
+    
+    /* Page Settings Panel */
+    .page-settings-panel {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+  `;
+  document.head.appendChild(styles);
+}
+
+// Open Dashboard Designer
+function openDashboardDesigner(pageId = null) {
+  const container = document.getElementById('dynamic-content');
+  designState.currentEditingPage = pageId ? designState.customPages.find(p => p.id === pageId) : null;
+  
+  const page = designState.currentEditingPage || {
+    id: 'page_' + Date.now(),
+    name: '',
+    icon: 'bi-bar-chart-line',
+    description: '',
+    showInMenu: true,
+    widgets: []
+  };
+  
+  container.innerHTML = `
+    <div class="dashboard-designer fade-in">
+      <!-- Designer Header -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex align-items-center gap-3">
+          <button class="btn btn-light btn-icon rounded-circle shadow-sm" onclick="loadSection('design')" title="Back">
+            <i class="bi bi-arrow-left"></i>
+          </button>
+          <div>
+            <h4 class="fw-bold mb-0">${pageId ? 'Edit Dashboard Page' : 'Create Dashboard Page'}</h4>
+            <small class="text-muted">Design your custom report page</small>
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary" onclick="previewDashboardPage()">
+            <i class="bi bi-eye me-1"></i> Preview
+          </button>
+          <button class="btn btn-primary" onclick="saveDashboardPage()">
+            <i class="bi bi-check-lg me-1"></i> Save Page
+          </button>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <!-- Widget Palette (Left) -->
+        <div class="col-lg-3">
+          <div class="widget-palette">
+            <h6 class="fw-bold mb-3">Widgets</h6>
+            <p class="text-muted small mb-3">Drag widgets to the canvas</p>
+            
+            <!-- Metrics Widgets -->
+            <div class="widget-category">
+              <div class="widget-category-title">Metrics</div>
+              ${designState.availableWidgets.filter(w => w.category === 'metrics').map(w => `
+                <div class="widget-item" draggable="true" data-widget-id="${w.id}" ondragstart="handleWidgetDragStart(event, '${w.id}')">
+                  <div class="widget-item-icon"><i class="bi ${w.icon}"></i></div>
+                  <span class="widget-item-name">${w.name}</span>
+                </div>
+              `).join('')}
+            </div>
+            
+            <!-- Charts Widgets -->
+            <div class="widget-category">
+              <div class="widget-category-title">Charts</div>
+              ${designState.availableWidgets.filter(w => w.category === 'charts').map(w => `
+                <div class="widget-item" draggable="true" data-widget-id="${w.id}" ondragstart="handleWidgetDragStart(event, '${w.id}')">
+                  <div class="widget-item-icon"><i class="bi ${w.icon}"></i></div>
+                  <span class="widget-item-name">${w.name}</span>
+                </div>
+              `).join('')}
+            </div>
+            
+            <!-- Data Widgets -->
+            <div class="widget-category">
+              <div class="widget-category-title">Data</div>
+              ${designState.availableWidgets.filter(w => w.category === 'data').map(w => `
+                <div class="widget-item" draggable="true" data-widget-id="${w.id}" ondragstart="handleWidgetDragStart(event, '${w.id}')">
+                  <div class="widget-item-icon"><i class="bi ${w.icon}"></i></div>
+                  <span class="widget-item-name">${w.name}</span>
+                </div>
+              `).join('')}
+            </div>
+            
+            <!-- Analytics Widgets -->
+            <div class="widget-category">
+              <div class="widget-category-title">Analytics</div>
+              ${designState.availableWidgets.filter(w => w.category === 'analytics').map(w => `
+                <div class="widget-item" draggable="true" data-widget-id="${w.id}" ondragstart="handleWidgetDragStart(event, '${w.id}')">
+                  <div class="widget-item-icon"><i class="bi ${w.icon}"></i></div>
+                  <span class="widget-item-name">${w.name}</span>
+                </div>
+              `).join('')}
+            </div>
+            
+            <!-- Content Widgets -->
+            <div class="widget-category">
+              <div class="widget-category-title">Content</div>
+              ${designState.availableWidgets.filter(w => w.category === 'content').map(w => `
+                <div class="widget-item" draggable="true" data-widget-id="${w.id}" ondragstart="handleWidgetDragStart(event, '${w.id}')">
+                  <div class="widget-item-icon"><i class="bi ${w.icon}"></i></div>
+                  <span class="widget-item-name">${w.name}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+
+        <!-- Design Canvas (Center) -->
+        <div class="col-lg-6">
+          <div class="design-canvas ${page.widgets.length === 0 ? 'empty' : ''}" 
+               id="design-canvas"
+               ondrop="handleWidgetDrop(event)" 
+               ondragover="handleDragOver(event)"
+               ondragleave="handleDragLeave(event)">
+            ${page.widgets.length === 0 ? `
+              <div class="canvas-placeholder">
+                <i class="bi bi-plus-square-dotted"></i>
+                <h5>Drag widgets here</h5>
+                <p class="small">Drop widgets from the left panel to build your dashboard</p>
+              </div>
+            ` : ''}
+            <div id="placed-widgets">
+              ${page.widgets.map((w, idx) => renderPlacedWidget(w, idx)).join('')}
+            </div>
+          </div>
+        </div>
+
+        <!-- Page Settings (Right) -->
+        <div class="col-lg-3">
+          <div class="page-settings-panel">
+            <h6 class="fw-bold mb-3">Page Settings</h6>
+            
+            <div class="mb-3">
+              <label class="form-label small text-muted">Page Name *</label>
+              <input type="text" class="form-control" id="page-name" value="${page.name}" placeholder="e.g., Sales Overview">
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label small text-muted">Description</label>
+              <textarea class="form-control" id="page-description" rows="2" placeholder="Brief description...">${page.description}</textarea>
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label small text-muted">Icon</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi ${page.icon}" id="selected-icon-preview"></i></span>
+                <select class="form-select" id="page-icon" onchange="updateIconPreview(this.value)">
+                  <option value="bi-bar-chart-line" ${page.icon === 'bi-bar-chart-line' ? 'selected' : ''}>Bar Chart</option>
+                  <option value="bi-graph-up" ${page.icon === 'bi-graph-up' ? 'selected' : ''}>Graph Up</option>
+                  <option value="bi-pie-chart" ${page.icon === 'bi-pie-chart' ? 'selected' : ''}>Pie Chart</option>
+                  <option value="bi-speedometer2" ${page.icon === 'bi-speedometer2' ? 'selected' : ''}>Dashboard</option>
+                  <option value="bi-currency-rupee" ${page.icon === 'bi-currency-rupee' ? 'selected' : ''}>Revenue</option>
+                  <option value="bi-bag-check" ${page.icon === 'bi-bag-check' ? 'selected' : ''}>Orders</option>
+                  <option value="bi-boxes" ${page.icon === 'bi-boxes' ? 'selected' : ''}>Inventory</option>
+                  <option value="bi-people" ${page.icon === 'bi-people' ? 'selected' : ''}>Customers</option>
+                  <option value="bi-truck" ${page.icon === 'bi-truck' ? 'selected' : ''}>Shipping</option>
+                  <option value="bi-calendar3" ${page.icon === 'bi-calendar3' ? 'selected' : ''}>Calendar</option>
+                  <option value="bi-file-earmark-text" ${page.icon === 'bi-file-earmark-text' ? 'selected' : ''}>Report</option>
+                  <option value="bi-lightning" ${page.icon === 'bi-lightning' ? 'selected' : ''}>Performance</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="mb-4">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="show-in-menu" ${page.showInMenu ? 'checked' : ''}>
+                <label class="form-check-label small" for="show-in-menu">
+                  Show in Overview submenu
+                </label>
+              </div>
+              <small class="text-muted d-block mt-1">Page will appear under Overview in navigation</small>
+            </div>
+            
+            <hr>
+            
+            <h6 class="fw-bold mb-3">Quick Add</h6>
+            <div class="d-grid gap-2">
+              <button class="btn btn-outline-primary btn-sm" onclick="addQuickWidget('kpi_card')">
+                <i class="bi bi-speedometer2 me-2"></i>Add KPI Card
+              </button>
+              <button class="btn btn-outline-primary btn-sm" onclick="addQuickWidget('line_chart')">
+                <i class="bi bi-graph-up me-2"></i>Add Chart
+              </button>
+              <button class="btn btn-outline-primary btn-sm" onclick="addQuickWidget('data_table')">
+                <i class="bi bi-table me-2"></i>Add Table
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Store page ID for saving
+  window.currentDesigningPageId = page.id;
+  window.currentPageWidgets = [...page.widgets];
+}
+
+function renderPlacedWidget(widget, index) {
+  const widgetDef = designState.availableWidgets.find(w => w.id === widget.type) || { name: 'Widget', icon: 'bi-square' };
+  
+  return `
+    <div class="placed-widget" data-widget-index="${index}">
+      <div class="placed-widget-header">
+        <div class="placed-widget-title">
+          <i class="bi ${widgetDef.icon} text-primary"></i>
+          <span>${widget.title || widgetDef.name}</span>
+        </div>
+        <div class="placed-widget-actions">
+          <button class="btn btn-sm btn-icon" onclick="configureWidget(${index})" title="Configure">
+            <i class="bi bi-gear"></i>
+          </button>
+          <button class="btn btn-sm btn-icon text-danger" onclick="removeWidget(${index})" title="Remove">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </div>
+      <div class="widget-preview">
+        ${getWidgetPreview(widget.type)}
+      </div>
+    </div>
+  `;
+}
+
+function getWidgetPreview(type) {
+  const previews = {
+    'kpi_card': '<div class="text-center"><div class="fw-bold fs-4 text-primary">₹0</div><small class="text-muted">KPI Value</small></div>',
+    'line_chart': '<i class="bi bi-graph-up fs-1 text-primary opacity-50"></i>',
+    'bar_chart': '<i class="bi bi-bar-chart fs-1 text-primary opacity-50"></i>',
+    'pie_chart': '<i class="bi bi-pie-chart fs-1 text-primary opacity-50"></i>',
+    'area_chart': '<i class="bi bi-graph-up-arrow fs-1 text-primary opacity-50"></i>',
+    'data_table': '<i class="bi bi-table fs-1 text-primary opacity-50"></i>',
+    'recent_orders': '<i class="bi bi-bag-check fs-1 text-success opacity-50"></i>',
+    'top_products': '<i class="bi bi-star fs-1 text-warning opacity-50"></i>',
+    'platform_breakdown': '<i class="bi bi-diagram-3 fs-1 text-info opacity-50"></i>',
+    'trend_indicator': '<i class="bi bi-arrow-up-right fs-1 text-success opacity-50"></i>',
+    'progress_gauge': '<i class="bi bi-speedometer fs-1 text-primary opacity-50"></i>',
+    'calendar_heatmap': '<i class="bi bi-calendar3 fs-1 text-primary opacity-50"></i>',
+    'text_block': '<i class="bi bi-card-text fs-1 text-secondary opacity-50"></i>',
+    'image_block': '<i class="bi bi-image fs-1 text-secondary opacity-50"></i>',
+  };
+  return previews[type] || '<i class="bi bi-square fs-1 opacity-50"></i>';
+}
+
+// Drag and Drop Handlers
+function handleWidgetDragStart(event, widgetId) {
+  event.dataTransfer.setData('widgetId', widgetId);
+  event.dataTransfer.effectAllowed = 'copy';
+}
+
+function handleDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+  document.getElementById('design-canvas').classList.add('drag-over');
+}
+
+function handleDragLeave(event) {
+  document.getElementById('design-canvas').classList.remove('drag-over');
+}
+
+function handleWidgetDrop(event) {
+  event.preventDefault();
+  document.getElementById('design-canvas').classList.remove('drag-over');
+  
+  const widgetId = event.dataTransfer.getData('widgetId');
+  if (!widgetId) return;
+  
+  addWidgetToCanvas(widgetId);
+}
+
+function addWidgetToCanvas(widgetId) {
+  const widgetDef = designState.availableWidgets.find(w => w.id === widgetId);
+  if (!widgetDef) return;
+  
+  const newWidget = {
+    id: 'widget_' + Date.now(),
+    type: widgetId,
+    title: widgetDef.name,
+    config: {}
+  };
+  
+  window.currentPageWidgets = window.currentPageWidgets || [];
+  window.currentPageWidgets.push(newWidget);
+  
+  // Update canvas
+  const canvas = document.getElementById('design-canvas');
+  canvas.classList.remove('empty');
+  
+  const placeholder = canvas.querySelector('.canvas-placeholder');
+  if (placeholder) placeholder.remove();
+  
+  const placedWidgets = document.getElementById('placed-widgets');
+  placedWidgets.innerHTML = window.currentPageWidgets.map((w, idx) => renderPlacedWidget(w, idx)).join('');
+}
+
+function addQuickWidget(type) {
+  addWidgetToCanvas(type);
+}
+
+function removeWidget(index) {
+  window.currentPageWidgets.splice(index, 1);
+  const placedWidgets = document.getElementById('placed-widgets');
+  placedWidgets.innerHTML = window.currentPageWidgets.map((w, idx) => renderPlacedWidget(w, idx)).join('');
+  
+  if (window.currentPageWidgets.length === 0) {
+    const canvas = document.getElementById('design-canvas');
+    canvas.classList.add('empty');
+    canvas.innerHTML = `
+      <div class="canvas-placeholder">
+        <i class="bi bi-plus-square-dotted"></i>
+        <h5>Drag widgets here</h5>
+        <p class="small">Drop widgets from the left panel to build your dashboard</p>
+      </div>
+      <div id="placed-widgets"></div>
+    `;
+  }
+}
+
+function configureWidget(index) {
+  const widget = window.currentPageWidgets[index];
+  const widgetDef = designState.availableWidgets.find(w => w.id === widget.type);
+  
+  Swal.fire({
+    title: 'Configure Widget',
+    html: `
+      <div class="text-start">
+        <div class="mb-3">
+          <label class="form-label small">Widget Title</label>
+          <input type="text" class="form-control" id="widget-title" value="${widget.title || widgetDef.name}">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small">Data Source</label>
+          <select class="form-select" id="widget-source">
+            <option value="orders">Orders Data</option>
+            <option value="inventory">Inventory Data</option>
+            <option value="revenue">Revenue Data</option>
+            <option value="customers">Customer Data</option>
+            <option value="platforms">Platform Analytics</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small">Width</label>
+          <select class="form-select" id="widget-width">
+            <option value="full">Full Width</option>
+            <option value="half">Half Width</option>
+            <option value="third">One Third</option>
+          </select>
+        </div>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Apply',
+    preConfirm: () => {
+      return {
+        title: document.getElementById('widget-title').value,
+        source: document.getElementById('widget-source').value,
+        width: document.getElementById('widget-width').value
+      };
+    }
+  }).then(result => {
+    if (result.isConfirmed) {
+      window.currentPageWidgets[index].title = result.value.title;
+      window.currentPageWidgets[index].config = {
+        source: result.value.source,
+        width: result.value.width
+      };
+      
+      const placedWidgets = document.getElementById('placed-widgets');
+      placedWidgets.innerHTML = window.currentPageWidgets.map((w, idx) => renderPlacedWidget(w, idx)).join('');
+    }
+  });
+}
+
+function updateIconPreview(iconClass) {
+  document.getElementById('selected-icon-preview').className = 'bi ' + iconClass;
+}
+
+function saveDashboardPage() {
+  const name = document.getElementById('page-name').value.trim();
+  
+  if (!name) {
+    Swal.fire('Error', 'Please enter a page name', 'warning');
+    return;
+  }
+  
+  if (!window.currentPageWidgets || window.currentPageWidgets.length === 0) {
+    Swal.fire('Error', 'Please add at least one widget to the page', 'warning');
+    return;
+  }
+  
+  const page = {
+    id: window.currentDesigningPageId,
+    name: name,
+    description: document.getElementById('page-description').value,
+    icon: document.getElementById('page-icon').value,
+    showInMenu: document.getElementById('show-in-menu').checked,
+    widgets: window.currentPageWidgets,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  
+  // Find and update or add new
+  const existingIndex = designState.customPages.findIndex(p => p.id === page.id);
+  if (existingIndex >= 0) {
+    designState.customPages[existingIndex] = page;
+  } else {
+    designState.customPages.push(page);
+  }
+  
+  // Save to localStorage
+  localStorage.setItem('custom_dashboard_pages', JSON.stringify(designState.customPages));
+  
+  // Update sidebar menu
+  updateSidebarWithCustomPages();
+  
+  Swal.fire({
+    icon: 'success',
+    title: 'Page Saved!',
+    text: page.showInMenu ? 'Your page has been added to the Overview menu.' : 'Your page has been saved.',
+    timer: 2000,
+    showConfirmButton: false
+  }).then(() => {
+    loadSection('design');
+  });
+}
+
+function previewDashboardPage() {
+  const name = document.getElementById('page-name').value.trim() || 'Preview';
+  
+  Swal.fire({
+    title: name,
+    html: `
+      <div class="text-start" style="max-height: 400px; overflow-y: auto;">
+        ${window.currentPageWidgets?.map(w => {
+          const def = designState.availableWidgets.find(d => d.id === w.type);
+          return `
+            <div class="p-3 mb-2 bg-light rounded">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <i class="bi ${def?.icon || 'bi-square'}"></i>
+                <strong>${w.title || def?.name || 'Widget'}</strong>
+              </div>
+              <div class="text-muted small">${def?.name || 'Widget'} widget</div>
+            </div>
+          `;
+        }).join('') || '<p class="text-muted">No widgets added yet</p>'}
+      </div>
+    `,
+    width: 600,
+    confirmButtonText: 'Close'
+  });
+}
+
+function viewCustomPage(pageId) {
+  const page = designState.customPages.find(p => p.id === pageId);
+  if (!page) return;
+  
+  loadSection('custom_page/' + pageId);
+}
+
+function editCustomPage(pageId) {
+  openDashboardDesigner(pageId);
+}
+
+function deleteCustomPage(pageId) {
+  Swal.fire({
+    title: 'Delete Page?',
+    text: 'This action cannot be undone.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#dc3545',
+    confirmButtonText: 'Yes, Delete'
+  }).then(result => {
+    if (result.isConfirmed) {
+      designState.customPages = designState.customPages.filter(p => p.id !== pageId);
+      localStorage.setItem('custom_dashboard_pages', JSON.stringify(designState.customPages));
+      updateSidebarWithCustomPages();
+      renderDesignModule(document.getElementById('dynamic-content'));
+      Swal.fire('Deleted!', 'Page has been deleted.', 'success');
+    }
+  });
+}
+
+// Update sidebar with custom pages under Overview
+function updateSidebarWithCustomPages() {
+  const pages = JSON.parse(localStorage.getItem('custom_dashboard_pages') || '[]').filter(p => p.showInMenu);
+  
+  // Find or create the Overview submenu container
+  const overviewLink = document.querySelector('a[href="#overview"]')?.parentElement;
+  if (!overviewLink) return;
+  
+  // Remove existing custom pages submenu
+  const existingSubmenu = overviewLink.querySelector('.custom-pages-submenu');
+  if (existingSubmenu) existingSubmenu.remove();
+  
+  if (pages.length === 0) return;
+  
+  // Create submenu
+  const submenu = document.createElement('ul');
+  submenu.className = 'custom-pages-submenu nav flex-column ms-4 mt-1';
+  submenu.innerHTML = pages.map(p => `
+    <li class="nav-item">
+      <a class="nav-link py-1 small" href="#custom_page/${p.id}" onclick="loadSection('custom_page/${p.id}'); return false;">
+        <i class="bi ${p.icon} me-2"></i>${p.name}
+      </a>
+    </li>
+  `).join('');
+  
+  overviewLink.appendChild(submenu);
+}
+
+// Render Custom Page
+function renderCustomPage(container, pageId) {
+  const page = designState.customPages.find(p => p.id === pageId);
+  
+  if (!page) {
+    container.innerHTML = `
+      <div class="text-center py-5">
+        <i class="bi bi-file-x fs-1 text-muted"></i>
+        <h4 class="mt-3">Page Not Found</h4>
+        <p class="text-muted">This custom page doesn't exist or has been deleted.</p>
+        <button class="btn btn-primary" onclick="loadSection('overview')">Go to Overview</button>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = `
+    <div class="custom-page fade-in">
+      <!-- Header -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex align-items-center gap-3">
+          <div class="page-icon">
+            <i class="bi ${page.icon} fs-4 text-primary"></i>
+          </div>
+          <div>
+            <h2 class="fw-bold text-dark mb-1">${page.name}</h2>
+            <p class="text-muted mb-0">${page.description || 'Custom dashboard page'}</p>
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="editCustomPage('${page.id}')">
+            <i class="bi bi-pencil me-1"></i> Edit
+          </button>
+          <button class="btn btn-outline-primary btn-sm" onclick="exportCustomPage('${page.id}')">
+            <i class="bi bi-download me-1"></i> Export
+          </button>
+        </div>
+      </div>
+
+      <!-- Widgets Grid -->
+      <div class="row g-4" id="custom-page-widgets">
+        ${page.widgets.map(w => renderCustomPageWidget(w)).join('')}
+      </div>
+    </div>
+  `;
+  
+  // Initialize any charts in the widgets
+  setTimeout(() => initCustomPageCharts(page.widgets), 100);
+}
+
+function renderCustomPageWidget(widget) {
+  const widgetDef = designState.availableWidgets.find(w => w.id === widget.type);
+  const width = widget.config?.width === 'half' ? 'col-lg-6' : widget.config?.width === 'third' ? 'col-lg-4' : 'col-12';
+  
+  return `
+    <div class="${width}">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi ${widgetDef?.icon || 'bi-square'} text-primary"></i>
+            <h6 class="mb-0 fw-bold">${widget.title || widgetDef?.name || 'Widget'}</h6>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="widget-content" id="widget-content-${widget.id}" data-widget-type="${widget.type}">
+            ${getWidgetContent(widget)}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getWidgetContent(widget) {
+  switch (widget.type) {
+    case 'kpi_card':
+      return `
+        <div class="text-center py-4">
+          <div class="display-4 fw-bold text-primary">₹1.2L</div>
+          <div class="text-muted">Total Value</div>
+          <div class="mt-2 text-success small"><i class="bi bi-arrow-up"></i> +12% vs last period</div>
+        </div>
+      `;
+    case 'line_chart':
+    case 'bar_chart':
+    case 'area_chart':
+      return `<canvas id="chart-${widget.id}" height="200"></canvas>`;
+    case 'pie_chart':
+      return `<canvas id="chart-${widget.id}" height="200"></canvas>`;
+    case 'data_table':
+      return `
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead><tr><th>Item</th><th class="text-end">Value</th></tr></thead>
+            <tbody>
+              <tr><td>Sample Item 1</td><td class="text-end">₹1,000</td></tr>
+              <tr><td>Sample Item 2</td><td class="text-end">₹2,500</td></tr>
+              <tr><td>Sample Item 3</td><td class="text-end">₹800</td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    case 'recent_orders':
+      return `
+        <div class="list-group list-group-flush">
+          <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+            <div><strong>#ORD-001</strong><br><small class="text-muted">Amazon</small></div>
+            <span class="badge bg-success">Delivered</span>
+          </div>
+          <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+            <div><strong>#ORD-002</strong><br><small class="text-muted">Flipkart</small></div>
+            <span class="badge bg-warning">Processing</span>
+          </div>
+        </div>
+      `;
+    case 'trend_indicator':
+      return `
+        <div class="d-flex align-items-center justify-content-center py-4">
+          <div class="text-center">
+            <i class="bi bi-arrow-up-right-circle text-success" style="font-size: 48px;"></i>
+            <div class="mt-2 fs-4 fw-bold text-success">+24.5%</div>
+            <div class="text-muted small">Growth Rate</div>
+          </div>
+        </div>
+      `;
+    default:
+      return `<div class="text-center py-4 text-muted"><i class="bi ${designState.availableWidgets.find(w => w.id === widget.type)?.icon || 'bi-square'} fs-1"></i><p class="mt-2">Widget Preview</p></div>`;
+  }
+}
+
+function initCustomPageCharts(widgets) {
+  widgets.forEach(widget => {
+    if (['line_chart', 'bar_chart', 'area_chart', 'pie_chart'].includes(widget.type)) {
+      const ctx = document.getElementById(`chart-${widget.id}`);
+      if (!ctx) return;
+      
+      if (widget.type === 'pie_chart') {
+        new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Amazon', 'Flipkart', 'Meesho', 'Others'],
+            datasets: [{
+              data: [35, 28, 22, 15],
+              backgroundColor: ['#ff9900', '#2874f0', '#f43397', '#64748b']
+            }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        });
+      } else {
+        new Chart(ctx, {
+          type: widget.type === 'bar_chart' ? 'bar' : 'line',
+          data: {
+            labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+            datasets: [{
+              label: 'Data',
+              data: [65, 59, 80, 81, 56, 72],
+              borderColor: '#3b82f6',
+              backgroundColor: widget.type === 'area_chart' ? 'rgba(59,130,246,0.2)' : '#3b82f6',
+              fill: widget.type === 'area_chart',
+              tension: 0.4
+            }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+      }
+    }
+  });
+}
+
+function exportCustomPage(pageId) {
+  Swal.fire({
+    icon: 'info',
+    title: 'Export',
+    text: 'Export functionality coming soon!',
+    timer: 2000,
+    showConfirmButton: false
+  });
+}
+
+// Initialize custom pages on load
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(updateSidebarWithCustomPages, 500);
+});
 
 // --- Settings Module ---
 
@@ -4944,6 +7369,340 @@ function bulkDeleteItems() {
     text: "Bulk delete functionality will be implemented soon.",
     confirmButtonText: "OK",
   });
+}
+
+// Edit Product Function - Opens the edit form with product data
+async function editProduct(productId) {
+  try {
+    // Show loading
+    Swal.fire({
+      title: 'Loading...',
+      text: 'Fetching product details',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    // Fetch product details
+    const res = await axios.get(`${API_BASE_URL}/mango/inventory/products/${productId}`);
+    const product = res.data;
+    
+    Swal.close();
+    
+    // Render the edit form with product data
+    renderItemEditForm(product);
+    
+  } catch (err) {
+    console.error('Failed to load product:', err);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: err.response?.data?.detail || 'Failed to load product details'
+    });
+  }
+}
+
+// Render Item Edit Form (similar to creation form but pre-filled)
+function renderItemEditForm(product) {
+  const container = document.getElementById("inventory-content");
+  if (!container) return;
+
+  // Store product ID for update
+  window.editingProductId = product.id;
+
+  container.innerHTML = `
+    <div class="fade-in">
+      <!-- Header -->
+      <div class="d-flex justify-content-between align-items-center mb-4 pb-3 border-bottom">
+        <div class="d-flex align-items-center gap-3">
+          <button class="btn btn-light btn-icon rounded-circle shadow-sm" onclick="loadSection('inventory_items')" title="Close">
+            <i class="bi bi-arrow-left"></i>
+          </button>
+          <div>
+            <h4 class="fw-bold mb-0">Edit Item: ${product.name}</h4>
+            <small class="text-muted">SKU: ${product.sku}</small>
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary px-4" onclick="loadSection('inventory_items')">Discard</button>
+          <button type="button" class="btn btn-primary px-4 fw-bold shadow-sm" onclick="submitItemUpdate()">
+            <i class="bi bi-check-lg me-2"></i> Update Item
+          </button>
+        </div>
+      </div>
+
+      <!-- Form Tabs -->
+      <ul class="nav nav-tabs mb-4" role="tablist">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-basic-edit">Basic Info</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-financial-edit">Financial</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-dimensions-edit">Dimensions</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-inventory-edit">Inventory Settings</a></li>
+      </ul>
+
+      <div class="tab-content">
+        <!-- Basic Info Tab -->
+        <div class="tab-pane fade show active" id="tab-basic-edit">
+          <div class="card border-0 shadow-sm p-4">
+            <div class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label small text-muted">SKU / Item Code *</label>
+                <input type="text" class="form-control" id="edit-sku" value="${product.sku || ''}" required>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small text-muted">Item Name *</label>
+                <input type="text" class="form-control" id="edit-name" value="${product.name || ''}" required>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small text-muted">Status</label>
+                <select class="form-select" id="edit-item-status">
+                  <option value="Active" ${product.item_status === 'Active' ? 'selected' : ''}>Active</option>
+                  <option value="Inactive" ${product.item_status === 'Inactive' ? 'selected' : ''}>Inactive</option>
+                  <option value="Discontinued" ${product.item_status === 'Discontinued' ? 'selected' : ''}>Discontinued</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label small text-muted">Description</label>
+                <textarea class="form-control" id="edit-description" rows="3">${product.description || ''}</textarea>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Category</label>
+                <input type="text" class="form-control" id="edit-category" value="${product.category || ''}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Brand</label>
+                <input type="text" class="form-control" id="edit-brand" value="${product.brand || ''}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Item Type</label>
+                <select class="form-select" id="edit-item-type">
+                  <option value="Finished Goods" ${product.item_type === 'Finished Goods' ? 'selected' : ''}>Finished Goods</option>
+                  <option value="Raw Material" ${product.item_type === 'Raw Material' ? 'selected' : ''}>Raw Material</option>
+                  <option value="WIP" ${product.item_type === 'WIP' ? 'selected' : ''}>WIP</option>
+                  <option value="Service" ${product.item_type === 'Service' ? 'selected' : ''}>Service</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Base UOM</label>
+                <select class="form-select" id="edit-base-uom">
+                  <option value="PC" ${product.base_uom === 'PC' ? 'selected' : ''}>PC (Piece)</option>
+                  <option value="KG" ${product.base_uom === 'KG' ? 'selected' : ''}>KG</option>
+                  <option value="LTR" ${product.base_uom === 'LTR' ? 'selected' : ''}>LTR (Litre)</option>
+                  <option value="MTR" ${product.base_uom === 'MTR' ? 'selected' : ''}>MTR (Meter)</option>
+                  <option value="BOX" ${product.base_uom === 'BOX' ? 'selected' : ''}>BOX</option>
+                  <option value="SET" ${product.base_uom === 'SET' ? 'selected' : ''}>SET</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">HSN/SAC Code</label>
+                <input type="text" class="form-control" id="edit-hsn-sac" value="${product.hsn_sac || ''}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Country of Origin</label>
+                <input type="text" class="form-control" id="edit-country-origin" value="${product.country_of_origin || 'India'}">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Financial Tab -->
+        <div class="tab-pane fade" id="tab-financial-edit">
+          <div class="card border-0 shadow-sm p-4">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Purchase Rate (₹)</label>
+                <input type="number" class="form-control" id="edit-purchase-rate" step="0.01" value="${product.purchase_rate || 0}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Sales Rate (₹)</label>
+                <input type="number" class="form-control" id="edit-sales-rate" step="0.01" value="${product.sales_rate || 0}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Default Margin (%)</label>
+                <input type="number" class="form-control" id="edit-margin" step="0.01" value="${product.default_margin_percent || 0}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Intra-State Tax Rate</label>
+                <input type="text" class="form-control" id="edit-intra-tax" placeholder="e.g., 18%" value="${product.intra_state_tax_rate || ''}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Inter-State Tax Rate</label>
+                <input type="text" class="form-control" id="edit-inter-tax" placeholder="e.g., 18%" value="${product.inter_state_tax_rate || ''}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Costing Method</label>
+                <select class="form-select" id="edit-costing-method">
+                  <option value="Weighted Average" ${product.costing_method === 'Weighted Average' ? 'selected' : ''}>Weighted Average</option>
+                  <option value="FIFO" ${product.costing_method === 'FIFO' ? 'selected' : ''}>FIFO</option>
+                  <option value="Standard Cost" ${product.costing_method === 'Standard Cost' ? 'selected' : ''}>Standard Cost</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dimensions Tab -->
+        <div class="tab-pane fade" id="tab-dimensions-edit">
+          <div class="card border-0 shadow-sm p-4">
+            <div class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label small text-muted">Weight (kg)</label>
+                <input type="number" class="form-control" id="edit-weight" step="0.01" value="${product.weight_kg || 0}">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small text-muted">Length (cm)</label>
+                <input type="number" class="form-control" id="edit-length" step="0.01" value="${product.length_cm || 0}">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small text-muted">Width (cm)</label>
+                <input type="number" class="form-control" id="edit-width" step="0.01" value="${product.width_cm || 0}">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small text-muted">Height (cm)</label>
+                <input type="number" class="form-control" id="edit-height" step="0.01" value="${product.height_cm || 0}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Color</label>
+                <input type="text" class="form-control" id="edit-color" value="${product.color || ''}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Size</label>
+                <input type="text" class="form-control" id="edit-size" value="${product.size || ''}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Material</label>
+                <input type="text" class="form-control" id="edit-material" value="${product.material || ''}">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inventory Settings Tab -->
+        <div class="tab-pane fade" id="tab-inventory-edit">
+          <div class="card border-0 shadow-sm p-4">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Min Order Qty</label>
+                <input type="number" class="form-control" id="edit-min-order" value="${product.min_order_qty || ''}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Max Order Qty</label>
+                <input type="number" class="form-control" id="edit-max-order" value="${product.max_order_qty || ''}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small text-muted">Reorder Level</label>
+                <input type="number" class="form-control" id="edit-reorder-level" value="${product.reorder_level || ''}">
+              </div>
+              <div class="col-md-6">
+                <div class="form-check form-switch mt-3">
+                  <input class="form-check-input" type="checkbox" id="edit-batch-tracking" ${product.batch_tracking_flag ? 'checked' : ''}>
+                  <label class="form-check-label">Batch Tracking</label>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-check form-switch mt-3">
+                  <input class="form-check-input" type="checkbox" id="edit-serial-tracking" ${product.serial_tracking_flag ? 'checked' : ''}>
+                  <label class="form-check-label">Serial Number Tracking</label>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="edit-expiry-tracking" ${product.expiry_tracking_flag ? 'checked' : ''}>
+                  <label class="form-check-label">Expiry Date Tracking</label>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="edit-hazardous" ${product.hazardous_flag ? 'checked' : ''}>
+                  <label class="form-check-label">Hazardous Item</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Submit Item Update
+async function submitItemUpdate() {
+  const productId = window.editingProductId;
+  if (!productId) {
+    Swal.fire('Error', 'No product selected for editing', 'error');
+    return;
+  }
+
+  // Validate required fields
+  const sku = document.getElementById('edit-sku')?.value?.trim();
+  const name = document.getElementById('edit-name')?.value?.trim();
+
+  if (!sku || !name) {
+    Swal.fire('Validation Error', 'SKU and Name are required', 'warning');
+    return;
+  }
+
+  const updateData = {
+    sku: sku,
+    name: name,
+    description: document.getElementById('edit-description')?.value || '',
+    category: document.getElementById('edit-category')?.value || '',
+    brand: document.getElementById('edit-brand')?.value || '',
+    item_type: document.getElementById('edit-item-type')?.value || 'Finished Goods',
+    item_status: document.getElementById('edit-item-status')?.value || 'Active',
+    base_uom: document.getElementById('edit-base-uom')?.value || 'PC',
+    hsn_sac: document.getElementById('edit-hsn-sac')?.value || '',
+    country_of_origin: document.getElementById('edit-country-origin')?.value || 'India',
+    purchase_rate: parseFloat(document.getElementById('edit-purchase-rate')?.value) || 0,
+    sales_rate: parseFloat(document.getElementById('edit-sales-rate')?.value) || 0,
+    default_margin_percent: parseFloat(document.getElementById('edit-margin')?.value) || 0,
+    intra_state_tax_rate: document.getElementById('edit-intra-tax')?.value || '',
+    inter_state_tax_rate: document.getElementById('edit-inter-tax')?.value || '',
+    costing_method: document.getElementById('edit-costing-method')?.value || 'Weighted Average',
+    weight_kg: parseFloat(document.getElementById('edit-weight')?.value) || 0,
+    length_cm: parseFloat(document.getElementById('edit-length')?.value) || 0,
+    width_cm: parseFloat(document.getElementById('edit-width')?.value) || 0,
+    height_cm: parseFloat(document.getElementById('edit-height')?.value) || 0,
+    color: document.getElementById('edit-color')?.value || '',
+    size: document.getElementById('edit-size')?.value || '',
+    material: document.getElementById('edit-material')?.value || '',
+    min_order_qty: parseFloat(document.getElementById('edit-min-order')?.value) || null,
+    max_order_qty: parseFloat(document.getElementById('edit-max-order')?.value) || null,
+    reorder_level: parseFloat(document.getElementById('edit-reorder-level')?.value) || null,
+    batch_tracking_flag: document.getElementById('edit-batch-tracking')?.checked || false,
+    serial_tracking_flag: document.getElementById('edit-serial-tracking')?.checked || false,
+    expiry_tracking_flag: document.getElementById('edit-expiry-tracking')?.checked || false,
+    hazardous_flag: document.getElementById('edit-hazardous')?.checked || false,
+  };
+
+  try {
+    Swal.fire({
+      title: 'Updating...',
+      text: 'Please wait while the item is being updated',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    await axios.put(`${API_BASE_URL}/mango/inventory/products/${productId}`, updateData);
+
+    Swal.fire({
+      icon: 'success',
+      title: 'Success',
+      text: 'Item updated successfully!',
+      timer: 1500,
+      showConfirmButton: false
+    });
+
+    // Clear editing state and reload list
+    window.editingProductId = null;
+    loadSection('inventory_items');
+
+  } catch (err) {
+    console.error('Update failed:', err);
+    Swal.fire({
+      icon: 'error',
+      title: 'Update Failed',
+      text: err.response?.data?.detail || 'Failed to update item'
+    });
+  }
 }
 
 // Delete Product Function

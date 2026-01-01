@@ -126,41 +126,39 @@ def generate_table_name(channel_name: str, company_id: int, db: Session) -> str:
 
 
 def create_channel_table(table_name: str, channel_id: int, company_id: int, db: Session):
-    """Create a new database table for the channel"""
+    """Create a new database table for the channel (SQLite compatible)"""
     sql = f"""
-    CREATE TABLE {table_name} (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        channel_record_id VARCHAR(100) UNIQUE COMMENT 'Order ID from channel',
+    CREATE TABLE IF NOT EXISTS {table_name} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel_record_id VARCHAR(100) UNIQUE,
         
         -- System fields (always present)
         company_id INT NOT NULL,
         uploaded_by_user_id INT,
         uploaded_at DATETIME,
-        raw_data JSON COMMENT 'Original upload data',
+        raw_data TEXT,
         
         -- Sync tracking
-        is_synced_to_master BOOLEAN DEFAULT FALSE,
+        is_synced_to_master BOOLEAN DEFAULT 0,
         master_order_id INT,
         synced_at DATETIME,
         
         -- Timestamps
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        
-        -- Foreign keys
-        FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
-        FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
-        FOREIGN KEY (master_order_id) REFERENCES master_order_sheet(master_order_id) ON DELETE SET NULL,
-        
-        -- Indexes
-        INDEX idx_company (company_id),
-        INDEX idx_sync_status (is_synced_to_master),
-        INDEX idx_master_order (master_order_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    COMMENT='Channel: {channel_id}';
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
     """
     
     db.execute(text(sql))
+    
+    # Create indexes separately (SQLite compatible)
+    try:
+        db.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_company ON {table_name} (company_id)"))
+        db.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_sync ON {table_name} (is_synced_to_master)"))
+        db.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_master ON {table_name} (master_order_id)"))
+    except Exception:
+        pass  # Indexes might already exist
+    
     db.commit()
 
 
@@ -318,6 +316,40 @@ async def list_channels(
     channels = query.order_by(Channel.created_at.desc()).all()
     
     return channels
+
+
+@router.get("/foreign-key-tables")
+async def get_foreign_key_tables(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get tables available for foreign key references"""
+    try:
+        # 1. Get standard tables
+        tables = [
+            {"name": "customers", "label": "Customers"},
+            {"name": "products", "label": "Products"},
+            {"name": "users", "label": "Users"},
+            {"name": "warehouses", "label": "Warehouses"},
+            {"name": "vendors", "label": "Vendors"}
+        ]
+        
+        # 2. Get channel tables (only if user has a company)
+        if current_user and current_user.company_id:
+            channels = db.query(Channel).filter(
+                Channel.company_id == current_user.company_id
+            ).all()
+            
+            for c in channels:
+                tables.append({
+                    "name": c.table_name,
+                    "label": f"Channel: {c.channel_name}"
+                })
+                
+        return {"tables": tables}
+    except Exception as e:
+        # Return empty list on error to prevent frontend breakage
+        return {"tables": [], "error": str(e)}
 
 
 @router.get("/{channel_id}", response_model=ChannelResponse)
@@ -535,20 +567,20 @@ async def get_channel_fields(
     # Fetch fields from ChannelTableSchema
     schema_entries = db.query(ChannelTableSchema).filter(
         ChannelTableSchema.channel_id == channel_id
-    ).order_by(ChannelTableSchema.id).all()
+    ).order_by(ChannelTableSchema.column_order, ChannelTableSchema.id).all()
     
     fields = []
     for entry in schema_entries:
         fields.append({
             "id": entry.id,
-            "field_name": entry.field_name,
-            "field_key": entry.field_key or entry.field_name.lower().replace(" ", "_"), 
-            "field_type": entry.field_type,
-            "is_required": entry.is_required,
-            "is_unique": entry.is_unique,
-            "is_primary_key": entry.is_primary_key,
-            "is_indexed": entry.is_indexed,
-            "on_duplicate": entry.on_duplicate_action,
+            "field_name": entry.field_name or entry.column_name,  # Display name or fall back to column_name
+            "field_key": entry.column_name,  # Technical field key
+            "field_type": entry.column_type,
+            "is_required": entry.is_required or not entry.is_nullable,
+            "is_unique": entry.is_unique or False,
+            "is_primary_key": entry.is_primary_key or False,
+            "is_indexed": entry.is_indexed or False,
+            "on_duplicate": entry.on_duplicate_action or "skip",
             "foreign_key_table": None, 
             "foreign_key_field": None
         })
@@ -576,15 +608,68 @@ async def get_channel_fields(
 
 
 class ChannelFieldCreateRequest(BaseModel):
-    """Request model for creating a new field"""
-    name: str
-    type: str
-    required: bool = False
-    unique: bool = False
-    primary_key: bool = False
-    indexed: bool = False
+    """Request model for creating a new field
+    
+    Accepts both naming conventions:
+    - Simple: name, type, required, unique, primary_key, indexed
+    - Enhanced: field_name, field_type, is_required, is_unique, is_primary_key, is_indexed
+    """
+    # Simple naming (from basic modal)
+    name: Optional[str] = None
+    type: Optional[str] = None
+    required: Optional[bool] = None
+    unique: Optional[bool] = None
+    primary_key: Optional[bool] = None
+    indexed: Optional[bool] = None
+    
+    # Enhanced naming (from enhanced modal)
+    field_name: Optional[str] = None
+    field_key: Optional[str] = None
+    field_type: Optional[str] = None
+    is_required: Optional[bool] = None
+    is_unique: Optional[bool] = None
+    is_primary_key: Optional[bool] = None
+    is_indexed: Optional[bool] = None
+    foreign_key_table: Optional[str] = None
+    foreign_key_field: Optional[str] = None
+    
+    # Common
     validation: str = "none"
     on_duplicate: str = "skip"
+    
+    def get_name(self) -> str:
+        return self.name or self.field_name or ""
+    
+    def get_type(self) -> str:
+        return self.type or self.field_type or "VARCHAR(255)"
+    
+    def get_required(self) -> bool:
+        if self.required is not None:
+            return self.required
+        if self.is_required is not None:
+            return self.is_required
+        return False
+    
+    def get_unique(self) -> bool:
+        if self.unique is not None:
+            return self.unique
+        if self.is_unique is not None:
+            return self.is_unique
+        return False
+    
+    def get_primary_key(self) -> bool:
+        if self.primary_key is not None:
+            return self.primary_key
+        if self.is_primary_key is not None:
+            return self.is_primary_key
+        return False
+    
+    def get_indexed(self) -> bool:
+        if self.indexed is not None:
+            return self.indexed
+        if self.is_indexed is not None:
+            return self.is_indexed
+        return False
 
 
 @router.post("/{channel_id}/fields")
@@ -608,8 +693,35 @@ async def create_channel_field(
             detail="Channel not found"
         )
     
-    # Generate field key from name
-    field_key = field.name.lower().replace(" ", "_").replace("-", "_")
+    # Get normalized values using helper methods
+    field_name = field.get_name()
+    field_type = field.get_type()
+    is_required = field.get_required()
+    is_unique = field.get_unique()
+    is_primary_key = field.get_primary_key()
+    is_indexed = field.get_indexed()
+    
+    if not field_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Field name is required"
+        )
+    
+    # Generate field key from name (or use provided field_key)
+    field_key = field.field_key if field.field_key else field_name.lower().replace(" ", "_").replace("-", "_")
+    
+    # System columns that cannot be created by user
+    system_columns = {
+        'id', 'channel_record_id', 'company_id', 'uploaded_by_user_id', 
+        'uploaded_at', 'raw_data', 'is_synced_to_master', 'master_order_id',
+        'synced_at', 'created_at', 'updated_at'
+    }
+    
+    if field_key.lower() in system_columns:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{field_key}' is a reserved system column and cannot be created"
+        )
     
     # Check if field already exists - use correct column name
     existing_field = db.query(ChannelTableSchema).filter(
@@ -623,37 +735,48 @@ async def create_channel_field(
             detail=f"Field '{field_key}' already exists"
         )
     
-    # Map frontend types to SQL types
+    # Map frontend types to SQL types (support both friendly names and SQL types)
     type_mapping = {
-        "Text": "VARCHAR",
+        # Friendly names
+        "Text": "VARCHAR(255)",
         "Number": "INT",
-        "Decimal": "DECIMAL",
+        "Decimal": "DECIMAL(10,2)",
         "Date": "DATETIME",
-        "Select": "VARCHAR",
+        "Select": "VARCHAR(100)",
         "Boolean": "BOOLEAN",
-        "LongText": "TEXT"
+        "LongText": "TEXT",
+        # SQL types (from modal dropdown)
+        "VARCHAR(255)": "VARCHAR(255)",
+        "INT": "INT",
+        "DECIMAL(10,2)": "DECIMAL(10,2)",
+        "DATETIME": "DATETIME",
+        "BOOLEAN": "BOOLEAN",
+        "TEXT": "TEXT",
     }
     
-    sql_type_base = type_mapping.get(field.type, "VARCHAR")
+    sql_type_base = type_mapping.get(field_type, field_type if '(' in str(field_type) else "VARCHAR(255)")
     
-    # Determine length
-    if sql_type_base == "VARCHAR" and field.type == "Text":
-        column_length = 255
-    elif sql_type_base == "VARCHAR" and field.type == "Select":
-        column_length = 100
-    elif sql_type_base == "DECIMAL":
-        column_length = None  # Will use default precision
-        sql_type_base = "DECIMAL(10,2)"
-    else:
-        column_length = None
+    # Determine column_length from type
+    column_length = None
+    if "VARCHAR" in sql_type_base:
+        import re
+        match = re.search(r'\((\d+)\)', sql_type_base)
+        if match:
+            column_length = int(match.group(1))
     
     # Create schema entry using correct model attributes
     schema_entry = ChannelTableSchema(
         channel_id=channel_id,
         column_name=field_key,
+        field_name=field_name,  # Display name
         column_type=sql_type_base,
         column_length=column_length,
-        is_nullable=not field.required,  # Note: is_nullable is opposite of required
+        is_nullable=not is_required,
+        is_required=is_required,
+        is_unique=is_unique,
+        is_primary_key=is_primary_key,
+        is_indexed=is_indexed,
+        on_duplicate_action=field.on_duplicate,
         column_order=999  # Will be at the end
     )
     
@@ -661,27 +784,23 @@ async def create_channel_field(
     
     # Add column to physical database table
     try:
-        # Build ALTER TABLE statement
-        if sql_type_base == "VARCHAR":
-            full_type = f"VARCHAR({column_length})"
-        else:
-            full_type = sql_type_base
+        # Build ALTER TABLE statement (SQLite compatible - no backticks)
+        full_type = sql_type_base
             
-        alter_sql = f"ALTER TABLE `{channel.table_name}` ADD COLUMN `{field_key}` {full_type}"
+        alter_sql = f"ALTER TABLE {channel.table_name} ADD COLUMN {field_key} {full_type}"
         
-        if field.required:
-            alter_sql += " NOT NULL"
-        if field.unique:
-            alter_sql += " UNIQUE"
-        if field.primary_key:
-            alter_sql += " PRIMARY KEY"
+        # Note: SQLite doesn't support NOT NULL, UNIQUE constraints in ALTER TABLE ADD COLUMN
+        # So we just add the column and store constraints in metadata
             
         db.execute(text(alter_sql))
         
-        # Create index if requested
-        if field.indexed and not field.primary_key:
-            index_sql = f"CREATE INDEX idx_{channel.table_name}_{field_key} ON `{channel.table_name}` (`{field_key}`)"
-            db.execute(text(index_sql))
+        # Create index if requested (SQLite compatible)
+        if is_indexed and not is_primary_key:
+            index_sql = f"CREATE INDEX IF NOT EXISTS idx_{channel.table_name}_{field_key} ON {channel.table_name} ({field_key})"
+            try:
+                db.execute(text(index_sql))
+            except Exception:
+                pass  # Index might already exist
         
         db.commit()
         
@@ -689,7 +808,7 @@ async def create_channel_field(
             "success": True,
             "field_id": schema_entry.id,
             "field_key": field_key,
-            "message": f"Field '{field.name}' created successfully"
+            "message": f"Field '{field_name}' created successfully"
         }
         
     except Exception as e:
@@ -701,11 +820,301 @@ async def create_channel_field(
 
 
 # ---------------------------------------------------------
+# Update Field Endpoint
+# ---------------------------------------------------------
+
+class ChannelFieldUpdateRequest(BaseModel):
+    """Request model for updating a field - accepts both naming conventions"""
+    # Simple naming
+    name: Optional[str] = None
+    required: Optional[bool] = None
+    on_duplicate: Optional[str] = None
+    
+    # Enhanced naming (from frontend modal)
+    field_name: Optional[str] = None
+    field_key: Optional[str] = None
+    field_type: Optional[str] = None
+    is_required: Optional[bool] = None
+    is_unique: Optional[bool] = None
+    is_primary_key: Optional[bool] = None
+    is_indexed: Optional[bool] = None
+    foreign_key_table: Optional[str] = None
+    foreign_key_field: Optional[str] = None
+
+
+@router.put("/{channel_id}/fields/{field_id}")
+async def update_channel_field(
+    channel_id: int,
+    field_id: int,
+    field: ChannelFieldUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update field metadata (name, required status, etc.) - metadata only, no schema changes"""
+    
+    # Verify channel exists and belongs to user's company
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Channel not found"
+        )
+    
+    # Find the field
+    schema_entry = db.query(ChannelTableSchema).filter(
+        ChannelTableSchema.id == field_id,
+        ChannelTableSchema.channel_id == channel_id
+    ).first()
+    
+    if not schema_entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Field not found"
+        )
+    
+    # Update allowed fields (metadata only - no physical table changes)
+    # Handle both naming conventions
+    display_name = field.name or field.field_name
+    if display_name is not None:
+        schema_entry.field_name = display_name
+    
+    # Required status
+    is_req = field.required if field.required is not None else field.is_required
+    if is_req is not None:
+        schema_entry.is_required = is_req
+        schema_entry.is_nullable = not is_req
+    
+    # On duplicate action
+    if field.on_duplicate is not None:
+        schema_entry.on_duplicate_action = field.on_duplicate
+    
+    # Note: We don't update field_type, is_unique, is_primary_key, is_indexed
+    # as these would require ALTER TABLE which is complex/dangerous for existing data
+    # These are stored in metadata but won't affect the physical table
+    
+    try:
+        db.commit()
+        db.refresh(schema_entry)
+        
+        return {
+            "success": True,
+            "field_id": schema_entry.id,
+            "message": "Field updated successfully"
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update field: {str(e)}"
+        )
+
+
+# ---------------------------------------------------------
+# Delete Field Endpoint
+# ---------------------------------------------------------
+
+@router.delete("/{channel_id}/fields/{field_id}")
+async def delete_channel_field(
+    channel_id: int,
+    field_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a field from a channel"""
+    
+    # Verify channel exists and belongs to user's company
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Channel not found"
+        )
+    
+    # Find the field
+    schema_entry = db.query(ChannelTableSchema).filter(
+        ChannelTableSchema.id == field_id,
+        ChannelTableSchema.channel_id == channel_id
+    ).first()
+    
+    if not schema_entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Field not found"
+        )
+    
+    column_name = schema_entry.column_name
+    
+    try:
+        # Delete from schema table
+        db.delete(schema_entry)
+        
+        # Note: SQLite doesn't support DROP COLUMN easily
+        # The column will remain in the physical table but be unused
+        # For production MySQL, you could add: ALTER TABLE DROP COLUMN
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Field '{column_name}' deleted successfully"
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete field: {str(e)}"
+        )
+
+
+# ---------------------------------------------------------
+# Bulk Field Save Endpoint
+# ---------------------------------------------------------
+
+class BulkFieldRequest(BaseModel):
+    """Request model for bulk field save"""
+    field_name: str
+    field_key: str
+    field_type: str
+    is_required: bool = False
+    is_unique: bool = False
+    is_primary_key: bool = False
+    is_indexed: bool = False
+    on_duplicate: str = "skip"
+
+
+class BulkFieldsRequest(BaseModel):
+    """Request model for bulk fields save"""
+    fields: List[BulkFieldRequest]
+
+
+@router.post("/{channel_id}/fields/bulk")
+async def save_bulk_fields(
+    channel_id: int,
+    request: BulkFieldsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Save multiple fields at once (from file/SQL import)"""
+    
+    # Verify channel exists and belongs to user's company
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Channel not found"
+        )
+    
+    # Map frontend types to SQL types
+    type_mapping = {
+        "Text": "VARCHAR(255)",
+        "Number": "INT",
+        "Decimal": "DECIMAL(10,2)",
+        "Date": "DATETIME",
+        "Select": "VARCHAR(100)",
+        "Boolean": "TINYINT(1)",
+        "LongText": "TEXT"
+    }
+    
+    saved_fields = []
+    errors = []
+    
+    # System columns that cannot be created by user
+    system_columns = {
+        'id', 'channel_record_id', 'company_id', 'uploaded_by_user_id', 
+        'uploaded_at', 'raw_data', 'is_synced_to_master', 'master_order_id',
+        'synced_at', 'created_at', 'updated_at'
+    }
+    
+    for idx, field in enumerate(request.fields):
+        try:
+            field_key = field.field_key.lower().replace(" ", "_").replace("-", "_")
+            
+            # Skip system columns
+            if field_key in system_columns:
+                errors.append(f"Field '{field_key}' is a system column, skipped")
+                continue
+            
+            # Check if field already exists
+            existing = db.query(ChannelTableSchema).filter(
+                ChannelTableSchema.channel_id == channel_id,
+                ChannelTableSchema.column_name == field_key
+            ).first()
+            
+            if existing:
+                errors.append(f"Field '{field_key}' already exists, skipped")
+                continue
+            
+            # Get SQL type
+            sql_type = type_mapping.get(field.field_type, "VARCHAR(255)")
+            
+            # Create schema entry
+            schema_entry = ChannelTableSchema(
+                channel_id=channel_id,
+                column_name=field_key,
+                field_name=field.field_name,
+                column_type=sql_type,
+                is_nullable=not field.is_required,
+                is_required=field.is_required,
+                is_unique=field.is_unique,
+                is_primary_key=field.is_primary_key,
+                is_indexed=field.is_indexed,
+                on_duplicate_action=field.on_duplicate,
+                column_order=idx
+            )
+            db.add(schema_entry)
+            db.flush()
+            
+            saved_fields.append({
+                "id": schema_entry.id,
+                "field_name": field.field_name,
+                "field_key": field_key
+            })
+            
+        except Exception as e:
+            errors.append(f"Failed to save field '{field.field_name}': {str(e)}")
+    
+    try:
+        db.commit()
+        return {
+            "success": True,
+            "saved_count": len(saved_fields),
+            "saved_fields": saved_fields,
+            "errors": errors
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save fields: {str(e)}"
+        )
+
+
+# ---------------------------------------------------------
 # Bulk Schema Inference Routes
 # ---------------------------------------------------------
 
 class SQLInferenceRequest(BaseModel):
     sql_text: str
+
+# System columns that should not be created/modified by user
+SYSTEM_COLUMNS = {
+    'id', 'channel_record_id', 'company_id', 'uploaded_by_user_id', 
+    'uploaded_at', 'raw_data', 'is_synced_to_master', 'master_order_id',
+    'synced_at', 'created_at', 'updated_at'
+}
+
 
 @router.post("/{channel_id}/schema/infer-sql")
 async def infer_schema_from_sql(
@@ -739,12 +1148,22 @@ async def infer_schema_from_sql(
     }
 
     for line in lines:
-        if not line or line.upper().startswith(('PRIMARY', 'KEY', 'CONSTRAINT', 'UNIQUE', 'INDEX')):
+        if not line or line.upper().startswith(('PRIMARY', 'KEY', 'CONSTRAINT', 'UNIQUE', 'INDEX', 'FOREIGN')):
             continue
             
         parts = line.split()
         if len(parts) >= 2:
             field_name = parts[0].strip('`"[]')
+            field_key = field_name.lower()
+            
+            # Skip system columns
+            if field_key in SYSTEM_COLUMNS:
+                continue
+            
+            # Skip IDENTITY columns (auto-increment primary keys)
+            if 'IDENTITY' in line.upper() or 'AUTO_INCREMENT' in line.upper() or 'AUTOINCREMENT' in line.upper():
+                continue
+            
             sql_type = parts[1].split('(')[0].upper() # Remove length e.g. VARCHAR(255) -> VARCHAR
             
             # Map SQL type to Mango type
@@ -758,12 +1177,16 @@ async def infer_schema_from_sql(
             is_req = 'NOT NULL' in line.upper()
             is_pk = 'PRIMARY KEY' in line.upper()
             
+            # Skip primary key columns (they're usually auto-increment IDs)
+            if is_pk:
+                continue
+            
             fields.append({
                 "field_name": field_name,
-                "field_key": field_name.lower(),
+                "field_key": field_key,
                 "field_type": mongo_type,
                 "is_required": is_req,
-                "is_primary_key": is_pk,
+                "is_primary_key": False,
                 "is_unique": False,
                 "is_indexed": False
             })
@@ -777,92 +1200,99 @@ async def infer_schema_from_file(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user)
 ):
-    """Infer fields from CSV Header"""
-    headers = []
-    sample_data = None
-    
-    if file.filename.endswith('.csv'):
-        content = await file.read()
-        decoded = content.decode('utf-8')
-        try:
-            f = io.StringIO(decoded)
-            reader = csv.reader(f)
-            headers = next(reader)
+    """Infer fields from CSV or Excel file headers"""
+    try:
+        headers = []
+        sample_data = None
+        
+        if file.filename.endswith('.csv'):
+            content = await file.read()
+            decoded = content.decode('utf-8')
             try:
-                sample_data = next(reader)
-            except StopIteration:
-                pass
-        except Exception as e:
-             raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+                f = io.StringIO(decoded)
+                reader = csv.reader(f)
+                headers = next(reader)
+                try:
+                    sample_data = next(reader)
+                except StopIteration:
+                    pass
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+                 
+        elif file.filename.endswith(('.xlsx', '.xls')):
+            try:
+                contents = await file.read()
+                df = pd.read_excel(io.BytesIO(contents), nrows=5)
+                headers = df.columns.tolist()
+                if not df.empty:
+                    sample_data = df.iloc[0].tolist()
+                    # Convert numpy types to native python types for JSON serialization
+                    sample_data = [
+                        x.item() if hasattr(x, 'item') else x 
+                        for x in sample_data
+                    ]
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to parse Excel file: {str(e)}")
+                
+        else:
+            raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported.")
              
-    elif file.filename.endswith(('.xlsx', '.xls')):
-        try:
-            contents = await file.read()
-            df = pd.read_excel(io.BytesIO(contents), nrows=5)
-            headers = df.columns.tolist()
-            if not df.empty:
-                sample_data = df.iloc[0].tolist()
-                # Convert numpy types to native python types for JSON serialization
-                sample_data = [
-                    x.item() if hasattr(x, 'item') else x 
-                    for x in sample_data
-                ]
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to parse Excel file: {str(e)}")
+        fields = []
+        for i, header in enumerate(headers):
+            field_name = str(header).strip() if header else f"column_{i}"
+            field_type = "Text"
             
-    else:
-        raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported.")
-         
-    fields = []
-    for i, header in enumerate(headers):
-        field_name = header.strip()
-        field_type = "Text"
-        
-        # Infer type from sample data if available
-        if sample_data and len(sample_data) > i:
-            val = sample_data[i]
-            if val.isdigit():
-                field_type = "Number"
-            elif val.lower() in ['true', 'false', 'yes', 'no']:
-                 field_type = "Select"
-            # Basic date check could go here
-            
-        fields.append({
-            "field_name": field_name,
-            "field_key": field_name.lower().replace(" ", "_"),
-            "field_type": field_type,
-            "is_required": False,
-            "is_primary_key": False, 
-            "is_unique": False,
-            "is_indexed": False
-        })
-        
-    return {"fields": fields}
-
-
-@router.get("/foreign-key-tables")
-async def get_foreign_key_tables(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get tables available for foreign key references"""
-    # 1. Get standard tables
-    tables = [
-        {"name": "customers", "label": "Customers"},
-        {"name": "products", "label": "Products"},
-        {"name": "users", "label": "Users"}
-    ]
-    
-    # 2. Get channel tables
-    if current_user.company_id:
-        channels = db.query(Channel).filter(
-            Channel.company_id == current_user.company_id
-        ).all()
-        
-        for c in channels:
-            tables.append({
-                "name": c.table_name,
-                "label": f"Channel: {c.channel_name}"
+            # Infer type from sample data if available
+            if sample_data and len(sample_data) > i:
+                val = sample_data[i]
+                # Handle None values and pandas NaT
+                if val is None or (hasattr(val, '__class__') and 'NaT' in str(type(val))):
+                    field_type = "Text"
+                elif isinstance(val, bool):
+                    field_type = "Select"
+                elif isinstance(val, (int, float)):
+                    # Check for NaN
+                    try:
+                        if pd.isna(val):
+                            field_type = "Text"
+                        else:
+                            field_type = "Number"
+                    except:
+                        field_type = "Number"
+                elif isinstance(val, str):
+                    val_str = val.strip()
+                    # Try to detect number strings
+                    try:
+                        float(val_str.replace(',', ''))
+                        field_type = "Number"
+                    except (ValueError, AttributeError):
+                        pass
+                    # Check for boolean strings
+                    if val_str.lower() in ['true', 'false', 'yes', 'no', '0', '1']:
+                        field_type = "Select"
+                # Basic date check
+                elif hasattr(val, 'strftime'):
+                    field_type = "Date"
+                
+            fields.append({
+                "field_name": field_name,
+                "field_key": field_name.lower().replace(" ", "_").replace("-", "_"),
+                "field_type": field_type,
+                "is_required": False,
+                "is_primary_key": False, 
+                "is_unique": False,
+                "is_indexed": False
             })
             
-    return {"tables": tables}
+        return {"fields": fields}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process file: {str(e)}"
+        )
+
+
+# Endpoint moved to before /{channel_id} routes

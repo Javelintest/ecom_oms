@@ -101,10 +101,16 @@ class ChannelTableSchema(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False, index=True)
-    column_name = Column(String(100), nullable=False)
+    column_name = Column(String(100), nullable=False)  # field_key (technical name)
+    field_name = Column(String(100))  # Display name
     column_type = Column(String(50), nullable=False)
     column_length = Column(Integer)
     is_nullable = Column(Boolean, default=True)
+    is_required = Column(Boolean, default=False)
+    is_unique = Column(Boolean, default=False)
+    is_primary_key = Column(Boolean, default=False)
+    is_indexed = Column(Boolean, default=False)
+    on_duplicate_action = Column(String(50), default="skip")  # skip, update, error
     default_value = Column(String(255))
     column_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)

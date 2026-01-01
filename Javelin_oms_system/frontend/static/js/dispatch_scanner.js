@@ -153,7 +153,7 @@ function renderDispatchScanner(container) {
                   placeholder="Type order ID or scan with USB scanner..." 
                   autocomplete="off"
                 >
-                <button class="btn btnprimary" onclick="handleManualScan()">
+                <button class="btn btn-primary" onclick="handleManualScan()">
                   <i class="bi bi-check-lg me-2"></i>Submit
                 </button>
               </div>
@@ -216,20 +216,24 @@ function renderDispatchScanner(container) {
  * Toggle auto-submit setting
  */
 function toggleAutoSubmit() {
-  scannerState.autoSubmit =
-    document.getElementById("auto-submit-toggle").checked;
+  const toggleElement = document.getElementById("auto-submit-toggle");
+  if (toggleElement) {
+    scannerState.autoSubmit = toggleElement.checked;
+  }
 
-  // Update indicator text
+  // Update indicator text (only if elements exist)
   const modeText = document.getElementById("scan-mode-text");
   const modeDesc = document.getElementById("scan-mode-description");
 
-  if (scannerState.autoSubmit) {
-    modeText.textContent = "Auto-Submit Enabled:";
-    modeDesc.textContent = "Detected barcodes will be processed automatically";
-  } else {
-    modeText.textContent = "Manual Mode:";
-    modeDesc.textContent =
-      "Scanned barcodes will appear in input field, click Submit to process";
+  if (modeText && modeDesc) {
+    if (scannerState.autoSubmit) {
+      modeText.textContent = "Auto-Submit Enabled:";
+      modeDesc.textContent = "Detected barcodes will be processed automatically";
+    } else {
+      modeText.textContent = "Manual Mode:";
+      modeDesc.textContent =
+        "Scanned barcodes will appear in input field, click Submit to process";
+    }
   }
 
   // Save preference to localStorage
@@ -805,19 +809,29 @@ async function loadWarehouses() {
 
 async function loadTodayScans() {
   try {
-    const response = await axios.get(`${API_BASE_URL}/dispatch/summary`);
+    const response = await axios.get(`${API_BASE_URL}/mango/dispatch/summary`);
     scannerState.todayScans = response.data.scanned_today || 0;
     updateScanCounter();
     loadRecentScans();
   } catch (error) {
-    console.error("Error loading scan summary:", error);
+    // Handle 404 gracefully - endpoint might not exist yet
+    if (error.response?.status === 404) {
+      console.log("Dispatch summary endpoint not available, using defaults");
+      scannerState.todayScans = 0;
+      updateScanCounter();
+      loadRecentScans();
+    } else {
+      console.error("Error loading scan summary:", error);
+      scannerState.todayScans = 0;
+      updateScanCounter();
+    }
   }
 }
 
 async function loadRecentScans() {
   try {
     const today = new Date().toISOString().split("T")[0];
-    const response = await axios.get(`${API_BASE_URL}/dispatch/scans`, {
+    const response = await axios.get(`${API_BASE_URL}/mango/dispatch/scans`, {
       params: {
         date_from: today,
         limit: 20,
@@ -827,7 +841,16 @@ async function loadRecentScans() {
     scannerState.recentScans = response.data || [];
     renderRecentScans();
   } catch (error) {
-    console.error("Error loading recent scans:", error);
+    // Handle 404 gracefully
+    if (error.response?.status === 404) {
+      console.log("Dispatch scans endpoint not available, using empty list");
+      scannerState.recentScans = [];
+      renderRecentScans();
+    } else {
+      console.error("Error loading recent scans:", error);
+      scannerState.recentScans = [];
+      renderRecentScans();
+    }
   }
 }
 
@@ -859,8 +882,10 @@ function setupScannerListeners() {
   if (validationToggle)
     validationToggle.checked = scannerState.validationMode === "loose";
 
-  // Update scan mode indicator if in auto-submit mode
-  if (scannerState.autoSubmit) {
+  // Update scan mode indicator if in auto-submit mode (only if elements exist)
+  const modeText = document.getElementById("scan-mode-text");
+  const modeDesc = document.getElementById("scan-mode-description");
+  if (scannerState.autoSubmit && modeText && modeDesc) {
     toggleAutoSubmit();
   }
 }
@@ -896,7 +921,7 @@ async function processScan(barcodeData) {
       console.log("🔒 STRICT MODE: Validating order exists...");
 
       validationResponse = await axios.post(
-        `${API_BASE_URL}/dispatch/validate`,
+        `${API_BASE_URL}/mango/dispatch/validate`,
         null,
         {
           params: { barcode_data: barcodeData },
@@ -950,7 +975,7 @@ async function processScan(barcodeData) {
 
     // Include validation mode and scan action in request
     const scanResponse = await axios.post(
-      `${API_BASE_URL}/dispatch/scan?validation_mode=${scannerState.validationMode}&scan_action=${scannerState.scanMode}`,
+      `${API_BASE_URL}/mango/dispatch/scan?validation_mode=${scannerState.validationMode}&scan_action=${scannerState.scanMode}`,
       scanData
     );
 
@@ -1013,7 +1038,7 @@ async function handleOrderCancellation(orderId, orderData) {
       showScanFeedback("success", `Order ${orderId} marked as CANCELLED`);
       playSuccessSound();
 
-      document.getElementByid("barcode-input").value = "";
+      document.getElementById("barcode-input").value = "";
       document.getElementById("barcode-input").focus();
     } catch (error) {
       showScanFeedback(
