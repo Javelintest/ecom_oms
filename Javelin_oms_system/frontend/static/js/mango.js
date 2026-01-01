@@ -412,7 +412,28 @@ function loadSection(sectionId) {
       break;
     case "channel_settings":
       if (typeof renderChannelSettings === "function") {
-        renderChannelSettings(container, subSection);
+        renderChannelSettings(container, subSection).catch(error => {
+          console.error("Error loading channel settings:", error);
+          container.innerHTML = `
+            <div class="alert alert-danger">
+              <h5><i class="bi bi-exclamation-triangle me-2"></i>Error Loading Channel Settings</h5>
+              <p>${error.message || "Failed to load channel configuration page."}</p>
+              <button class="btn btn-primary btn-sm" onclick="location.reload()">
+                <i class="bi bi-arrow-clockwise me-1"></i>Reload Page
+              </button>
+            </div>
+          `;
+        });
+      } else {
+        container.innerHTML = `
+          <div class="alert alert-warning">
+            <h5><i class="bi bi-exclamation-triangle me-2"></i>Channel Settings Module Not Loaded</h5>
+            <p>Please refresh the page to load the channel settings module.</p>
+            <button class="btn btn-primary btn-sm" onclick="location.reload()">
+              <i class="bi bi-arrow-clockwise me-1"></i>Reload Page
+            </button>
+          </div>
+        `;
       }
       break;
     case "sales_payments":

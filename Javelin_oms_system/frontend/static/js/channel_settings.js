@@ -4,9 +4,13 @@
  * headers, and dispatch mappings
  */
 
+// API_BASE_URL is already defined in mango.js (which loads before this file)
+// No need to redeclare it here - it's available globally
+
 const channelConfigState = {
   currentPlatform: "amazon", // Will be set when opening a channel
   currentPlatformName: "", // Store name for display
+  selectedTableId: null, // Track which table is currently selected (numeric ID, not "default")
   viewMode: "landing", // 'landing' or 'detail'
   headers: [],
   mappings: [],
@@ -23,10 +27,7 @@ const AVAILABLE_PLATFORMS = [];
 /**
  * Render channel settings page
  */
-/**
- * Render channel settings page
- */
-function renderChannelSettings(container, channelId = null) {
+async function renderChannelSettings(container, channelId = null) {
   if (!container)
     container =
       document.getElementById("dynamic-content") ||
@@ -60,10 +61,24 @@ function renderChannelSettings(container, channelId = null) {
     channelConfigState.viewMode = "landing";
   }
 
-  if (channelConfigState.viewMode === "landing") {
-    renderChannelLandingPage(container);
-  } else {
-    renderChannelDetailPage(container);
+  try {
+    if (channelConfigState.viewMode === "landing") {
+      renderChannelLandingPage(container);
+    } else {
+      // Await the async function to ensure it completes
+      await renderChannelDetailPage(container);
+    }
+  } catch (error) {
+    console.error("Error rendering channel settings:", error);
+    container.innerHTML = `
+      <div class="alert alert-danger">
+        <h5><i class="bi bi-exclamation-triangle me-2"></i>Error Loading Channel Settings</h5>
+        <p>${error.message || "An error occurred while loading the channel configuration page."}</p>
+        <button class="btn btn-primary btn-sm" onclick="location.reload()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Reload Page
+        </button>
+      </div>
+    `;
   }
 }
 
@@ -127,22 +142,66 @@ function renderChannelLandingPage(container) {
 }
 
 /**
+ * Fetch channel name from API
+ */
+async function fetchChannelName(channelId) {
+  if (!channelId || isNaN(channelId)) {
+    return null;
+  }
+  
+  try {
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/${channelId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    const channel = response.data;
+    return channel.channel_name || null;
+  } catch (error) {
+    console.error("Failed to fetch channel name:", error);
+    return null;
+  }
+}
+
+/**
  * Open channel configuration
  */
-function openChannelConfig(platformId, platformName) {
+async function openChannelConfig(platformId, platformName = null) {
   console.log("openChannelConfig called with:", platformId, platformName);
 
   // Update URL Hash to trigger router (which calls renderChannelSettings with ID)
   // But to be immediate, we also set state.
   channelConfigState.currentPlatform = platformId;
-  channelConfigState.currentPlatformName = platformName;
+  channelConfigState.selectedTableId = null; // Reset table selection when switching channels
   channelConfigState.viewMode = "detail";
+
+  // Fetch channel name if not provided or if it's a numeric ID (custom channel)
+  if (!platformName && platformId && !isNaN(platformId)) {
+    platformName = await fetchChannelName(platformId);
+  }
+  
+  channelConfigState.currentPlatformName = platformName || "Custom Channel";
 
   // Push to history
   window.location.hash = `channel_settings/${platformId}`;
 
   // Manually render to ensure immediate feedback (in case router is slow or failing)
-  renderChannelSettings(document.getElementById("dynamic-content"), platformId);
+  const container = document.getElementById("dynamic-content");
+  if (container) {
+    renderChannelSettings(container, platformId).catch(error => {
+      console.error("Error rendering channel settings:", error);
+      container.innerHTML = `
+        <div class="alert alert-danger">
+          <h5><i class="bi bi-exclamation-triangle me-2"></i>Error Loading Channel</h5>
+          <p>${error.message || "Failed to load channel configuration."}</p>
+          <button class="btn btn-primary btn-sm" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Reload Page
+          </button>
+        </div>
+      `;
+    });
+  }
 }
 window.openChannelConfig = openChannelConfig;
 
@@ -161,13 +220,78 @@ function backToLanding() {
 /**
  * Render Channel Detail Page (Premium Design)
  */
-function renderChannelDetailPage(container) {
-  const platform = AVAILABLE_PLATFORMS.find(
-    (p) => p.id === channelConfigState.currentPlatform
-  ) || {
-    id: channelConfigState.currentPlatform,
-    name: channelConfigState.currentPlatformName || "Custom Channel",
-    icon: "🔌", // Default icon
+async function renderChannelDetailPage(container) {
+  const channelId = channelConfigState.currentPlatform;
+  
+  if (!channelId) {
+    console.error("renderChannelDetailPage: No channelId provided");
+    container.innerHTML = `
+      <div class="alert alert-warning">
+        <h5><i class="bi bi-exclamation-triangle me-2"></i>No Channel Selected</h5>
+        <p>Please select a channel to configure.</p>
+        <button class="btn btn-primary btn-sm" onclick="backToLanding()">
+          <i class="bi bi-arrow-left me-1"></i>Back to Channels
+        </button>
+      </div>
+    `;
+    return;
+  }
+  
+  // Fetch channel details to get the actual name
+  let channelName = channelConfigState.currentPlatformName || "Custom Channel";
+  let channelIcon = "🔌";
+  
+  // If channelId is numeric, it's a custom channel - fetch from API
+  if (channelId && !isNaN(channelId)) {
+    try {
+      const token = localStorage.getItem("access_token");
+      if (!token) {
+        throw new Error("No authentication token found");
+      }
+      
+      const response = await axios.get(
+        `${API_BASE_URL}/api/mango/channels/${channelId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      const channel = response.data;
+      channelName = channel.channel_name || channelName;
+      channelConfigState.currentPlatformName = channelName;
+      
+      // Set icon based on channel type
+      const iconMap = {
+        marketplace: "🛒",
+        website: "🌐",
+        pos: "💳",
+        api: "🔌",
+        custom: "🔧"
+      };
+      channelIcon = iconMap[channel.channel_type] || channelIcon;
+    } catch (error) {
+      console.error("Failed to fetch channel details:", error);
+      // Show warning but continue rendering
+      if (error.response?.status === 404) {
+        channelName = `Channel ${channelId} (Not Found)`;
+      } else if (error.response?.status === 403) {
+        channelName = `Channel ${channelId} (Access Denied)`;
+      }
+      // Use cached name or fallback - don't block rendering
+    }
+  } else {
+    // Predefined platform
+    const platform = AVAILABLE_PLATFORMS.find(
+      (p) => p.id === channelId
+    );
+    if (platform) {
+      channelName = platform.name;
+      channelIcon = platform.icon;
+    }
+  }
+  
+  const platform = {
+    id: channelId,
+    name: channelName,
+    icon: channelIcon,
   };
 
   // Inject Premium Styles
@@ -281,6 +405,10 @@ function renderChannelDetailPage(container) {
                           data-bs-target="#preview-panel" type="button">
                     <i class="bi bi-window-sidebar me-3"></i>Data Preview
                   </button>
+                  <button class="nav-link text-start mb-2" id="tables-tab" data-bs-toggle="pill" 
+                          data-bs-target="#tables-panel" type="button">
+                    <i class="bi bi-database-fill-add me-3"></i>Tables
+                  </button>
                    <button class="nav-link text-start" id="settings-tab" data-bs-toggle="pill" 
                           data-bs-target="#settings-panel" type="button">
                     <i class="bi bi-gear me-3"></i>Advanced Settings
@@ -320,6 +448,11 @@ function renderChannelDetailPage(container) {
                     ${renderPreviewPanel()}
                   </div>
                   
+                  <!-- Tables Panel (NEW) -->
+                  <div class="tab-pane fade" id="tables-panel" role="tabpanel">
+                    ${renderTablesPanel()}
+                  </div>
+                  
                    <!-- Settings Panel -->
                   <div class="tab-pane fade" id="settings-panel" role="tabpanel">
                      <div class="text-center py-5">
@@ -333,10 +466,43 @@ function renderChannelDetailPage(container) {
           </div>
        </div>
     </div>
+
   `;
 
-  // Load configuration for this platform
-  loadPlatformConfiguration();
+  // Also load tables list for the Tables tab
+  try {
+    loadChannelTables();
+  } catch (error) {
+    console.error("Error loading channel tables:", error);
+  }
+
+  // Populate the table selector dropdown FIRST
+  // This will also load the correct fields based on selection
+  try {
+    await populateTableSelector();
+    // After dropdown is populated, if default is selected, load default config
+    if (
+      !channelConfigState.selectedTableId ||
+      channelConfigState.selectedTableId === "default"
+    ) {
+      loadPlatformConfiguration();
+    }
+  } catch (error) {
+    console.error("Error populating table selector:", error);
+    // Show error in table selector area
+    const selector = document.getElementById("table-selector");
+    if (selector) {
+      selector.innerHTML = `<option value="" disabled>Error loading tables</option>`;
+    }
+  }
+
+  // Setup tab activation handlers for lazy loading
+  setTimeout(() => {
+    const tablesTab = document.getElementById("tables-tab");
+    if (tablesTab) {
+      tablesTab.addEventListener("shown.bs.tab", () => loadChannelTables());
+    }
+  }, 100);
 }
 
 /**
@@ -355,6 +521,22 @@ function renderHeadersPanel() {
             </button>
             <button class="btn btn-primary shadow-sm rounded-pill px-4" onclick="showFieldEditModal()">
                 <i class="bi bi-plus-lg me-2"></i>Add New Field
+            </button>
+        </div>
+    </div>
+    
+    <!-- Table Selector Dropdown -->
+    <div class="mb-4">
+        <div class="d-flex align-items-center gap-3">
+            <label class="form-label mb-0 fw-bold text-muted small">
+                <i class="bi bi-database me-1"></i>Select Table:
+            </label>
+            <select class="form-select form-select-sm" id="table-selector" style="max-width: 350px;" 
+                    onchange="onTableSelected(this.value)">
+                <option value="" disabled>Loading tables...</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" onclick="refreshTableSelector()" title="Refresh tables">
+                <i class="bi bi-arrow-clockwise"></i>
             </button>
         </div>
     </div>
@@ -408,6 +590,730 @@ function renderPreviewPanel() {
    `;
 }
 
+/**
+ * Render Tables Panel - Multi-Table Management (NEW)
+ */
+function renderTablesPanel() {
+  return `
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-1"><i class="bi bi-database-fill-add text-primary me-2"></i>Channel Tables</h4>
+            <p class="text-muted mb-0 small">Create multiple tables for this channel with custom names (e.g., Orders, Returns, Inventory).</p>
+        </div>
+        <button class="btn btn-primary shadow-sm rounded-pill px-4" onclick="showCreateTableModal()">
+            <i class="bi bi-plus-lg me-2"></i>Create New Table
+        </button>
+    </div>
+
+    <div id="channel-tables-container">
+        <div class="text-center py-5 opacity-50">
+            <div class="spinner-grow text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+            <p class="fw-medium text-dark">Loading Tables...</p>
+        </div>
+    </div>
+  `;
+}
+
+/**
+ * Load channel tables list
+ */
+async function loadChannelTables() {
+  const channelId = channelConfigState.currentPlatform;
+  if (!channelId) return;
+
+  const container = document.getElementById("channel-tables-container");
+  if (!container) return;
+
+  try {
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/${channelId}/tables`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const { default_table, tables } = response.data;
+
+    // Build tables list HTML
+    let html = "";
+
+    // Additional tables
+    if (tables.length === 0) {
+      html += `
+        <div class="alert alert-info border-0 mt-3">
+          <i class="bi bi-info-circle me-2"></i>
+          No tables created yet. All default tables will be created automatically with new channels.
+        </div>
+      `;
+    } else {
+      tables.forEach((table) => {
+        // Check if it's a system table (default) - use green style
+        const isDefault = table.is_system;
+        const borderColor = isDefault ? "border-success" : "";
+        const iconColor = isDefault ? "text-success" : "text-primary";
+        const badgeClass = isDefault
+          ? "bg-success-subtle text-success"
+          : "bg-secondary-subtle text-secondary";
+        const badgetext = isDefault ? "Default" : "Custom";
+
+        const typeIcons = {
+          orders: "bi-cart-check",
+          returns: "bi-arrow-return-left",
+          inventory: "bi-boxes",
+          custom: "bi-database-fill",
+        };
+        const icon = typeIcons[table.table_type] || "bi-table";
+
+        html += `
+          <div class="card border-0 shadow-sm mb-3 ${
+            isDefault ? "border-start border-4 " + borderColor : "hover-lift"
+          }">
+            <div class="card-body p-4">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <h5 class="mb-1">
+                    <i class="bi ${icon} ${iconColor} me-2"></i>${
+          table.table_name
+        }
+                    <span class="badge ${badgeClass} ms-2">${badgetext}</span>
+                  </h5>
+                  <p class="text-muted mb-0 small">${
+                    isDefault
+                      ? table.description || "Default table for this channel"
+                      : `<code>${table.table_name}</code>${
+                          table.description ? " - " + table.description : ""
+                        }`
+                  }</p>
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                  ${
+                    isDefault
+                      ? `
+                  <span class="badge bg-light text-dark"><i class="bi bi-database me-1"></i>Active</span>
+                  `
+                      : `
+                  <span class="badge bg-light text-dark">${
+                    table.record_count || 0
+                  } records</span>
+                  <button class="btn btn-sm btn-outline-success" onclick="manageTableFields(${
+                    table.id
+                  })" title="Manage Fields">
+                    <i class="bi bi-list-columns-reverse"></i>
+                  </button>
+                  <button class="btn btn-sm btn-outline-primary" onclick="viewTableSchema(${
+                    table.id
+                  })" title="View Schema">
+                    <i class="bi bi-eye"></i>
+                  </button>
+                  <button class="btn btn-sm btn-outline-danger" onclick="deleteChannelTable(${
+                    table.id
+                  }, '${table.table_name}')" title="Delete">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                  `
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    container.innerHTML = html;
+  } catch (error) {
+    console.error("Failed to load tables:", error);
+    container.innerHTML = `
+      <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Could not load tables. <a href="#" onclick="loadChannelTables(); return false;">Retry</a>
+      </div>
+    `;
+  }
+}
+
+/**
+ * Show Create Table Modal
+ */
+async function showCreateTableModal() {
+  const channelId = channelConfigState.currentPlatform;
+
+  const result = await Swal.fire({
+    title:
+      '<i class="bi bi-database-fill-add text-primary me-2"></i>Create New Table',
+    html: `
+      <form id="create-table-form" class="text-start">
+        <div class="mb-3">
+          <label class="form-label fw-bold">Table Name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control form-control-lg" id="new-table-name" 
+                 placeholder="e.g., flipkart_returns, amazon_inventory" required
+                 oninput="previewTableName(this)">
+          <small class="text-muted">Use lowercase letters, numbers, and underscores only</small>
+          <div id="table-name-preview" class="mt-2"></div>
+        </div>
+        
+        <div class="mb-3">
+          <label class="form-label fw-bold">Display Name</label>
+          <input type="text" class="form-control" id="new-table-display-name" 
+                 placeholder="e.g., Flipkart Returns, Amazon Inventory">
+          <small class="text-muted">User-friendly name for this table</small>
+        </div>
+        
+        <div class="mb-3">
+          <label class="form-label fw-bold">Table Type</label>
+          <select class="form-select" id="new-table-type">
+            <option value="orders">📦 Orders</option>
+            <option value="returns">↩️ Returns</option>
+            <option value="inventory">📊 Inventory</option>
+            <option value="custom">🔧 Custom</option>
+          </select>
+        </div>
+        
+        <div class="mb-3">
+          <label class="form-label fw-bold">Description</label>
+          <textarea class="form-control" id="new-table-description" rows="2"
+                    placeholder="Optional description of this table's purpose"></textarea>
+        </div>
+      </form>
+    `,
+    width: 600,
+    showCancelButton: true,
+    confirmButtonText: '<i class="bi bi-check-lg me-2"></i>Create Table',
+    cancelButtonText: "Cancel",
+    customClass: {
+      confirmButton: "btn btn-success px-4",
+      cancelButton: "btn btn-outline-secondary px-4",
+    },
+    preConfirm: () => {
+      let tableName = document.getElementById("new-table-name").value.trim();
+      if (!tableName) {
+        Swal.showValidationMessage("Table name is required");
+        return false;
+      }
+      // Auto-sanitize: convert spaces to underscores, make lowercase, remove special chars
+      tableName = tableName
+        .toLowerCase()
+        .replace(/\s+/g, "_")
+        .replace(/[^a-z0-9_]/g, "");
+
+      if (!tableName) {
+        Swal.showValidationMessage("Invalid table name after sanitization");
+        return false;
+      }
+      return {
+        table_name: tableName,
+        display_name: document
+          .getElementById("new-table-display-name")
+          .value.trim(),
+        table_type: document.getElementById("new-table-type").value,
+        description: document
+          .getElementById("new-table-description")
+          .value.trim(),
+      };
+    },
+  });
+
+  if (result.isConfirmed) {
+    await createChannelTable(channelId, result.value);
+  }
+}
+
+/**
+ * Preview table name as user types
+ */
+function previewTableName(input) {
+  const preview = document.getElementById("table-name-preview");
+  const value = input.value
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "_")
+    .replace(/_+/g, "_");
+  if (value) {
+    preview.innerHTML = `<span class="badge bg-primary-subtle text-primary">Table: <code>${value}</code></span>`;
+  } else {
+    preview.innerHTML = "";
+  }
+}
+
+/**
+ * Create channel table via API
+ */
+async function createChannelTable(channelId, tableData) {
+  try {
+    Swal.fire({
+      title: "Creating table...",
+      didOpen: () => Swal.showLoading(),
+    });
+
+    const token = localStorage.getItem("access_token");
+    const response = await axios.post(
+      `${API_BASE_URL}/api/mango/channels/${channelId}/tables`,
+      tableData,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    Swal.fire({
+      icon: "success",
+      title: "Table Created!",
+      text: `Table "${response.data.table.table_name}" created successfully`,
+      timer: 2000,
+    });
+
+    // Reload tables list
+    loadChannelTables();
+  } catch (error) {
+    Swal.fire({
+      icon: "error",
+      title: "Failed to create table",
+      text: error.response?.data?.detail || error.message,
+    });
+  }
+}
+
+/**
+ * Delete a channel table
+ */
+async function deleteChannelTable(tableId, tableName) {
+  const channelId = channelConfigState.currentPlatform;
+
+  const result = await Swal.fire({
+    title: "Delete Table?",
+    html: `
+      <p>Are you sure you want to delete table <strong>${tableName}</strong>?</p>
+      <p class="text-danger"><strong>⚠️ Warning:</strong> This will permanently delete the table and ALL its data!</p>
+    `,
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "#d33",
+    confirmButtonText: "Yes, delete it!",
+  });
+
+  if (result.isConfirmed) {
+    try {
+      Swal.fire({ title: "Deleting...", didOpen: () => Swal.showLoading() });
+
+      const token = localStorage.getItem("access_token");
+      await axios.delete(
+        `${API_BASE_URL}/api/mango/channels/${channelId}/tables/${tableId}?confirm=true`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      Swal.fire("Deleted!", "Table has been deleted.", "success");
+      loadChannelTables();
+    } catch (error) {
+      Swal.fire(
+        "Error",
+        error.response?.data?.detail || "Failed to delete table",
+        "error"
+      );
+    }
+  }
+}
+
+/**
+ * View table schema
+ */
+async function viewTableSchema(tableId) {
+  const channelId = channelConfigState.currentPlatform;
+
+  try {
+    Swal.fire({ title: "Loading...", didOpen: () => Swal.showLoading() });
+
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/${channelId}/tables/${tableId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const table = response.data;
+
+    Swal.fire({
+      title: `<i class="bi bi-table text-primary me-2"></i>${table.display_name}`,
+      html: `
+        <div class="text-start">
+          <p><strong>Table Name:</strong> <code>${table.table_name}</code></p>
+          <p><strong>Type:</strong> ${table.table_type}</p>
+          <p><strong>Records:</strong> ${table.record_count || 0}</p>
+          ${
+            table.description
+              ? `<p><strong>Description:</strong> ${table.description}</p>`
+              : ""
+          }
+          
+          <h6 class="mt-4 mb-3">Fields (${table.fields.length})</h6>
+          <div class="table-responsive" style="max-height: 300px;">
+            <table class="table table-sm">
+              <thead class="table-light">
+                <tr><th>Name</th><th>Type</th><th>Flags</th></tr>
+              </thead>
+              <tbody>
+                ${table.fields
+                  .map(
+                    (f) => `
+                  <tr>
+                    <td><code>${f.field_key}</code></td>
+                    <td><span class="badge bg-secondary">${
+                      f.field_type
+                    }</span></td>
+                    <td>
+                      ${
+                        f.is_required
+                          ? '<span class="badge bg-danger-subtle text-danger me-1">Required</span>'
+                          : ""
+                      }
+                      ${
+                        f.is_unique
+                          ? '<span class="badge bg-info-subtle text-info me-1">Unique</span>'
+                          : ""
+                      }
+                      ${
+                        f.is_indexed
+                          ? '<span class="badge bg-warning-subtle text-warning">Indexed</span>'
+                          : ""
+                      }
+                    </td>
+                  </tr>
+                `
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `,
+      width: 700,
+      confirmButtonText: "Close",
+    });
+  } catch (error) {
+    Swal.fire(
+      "Error",
+      error.response?.data?.detail || "Failed to load table schema",
+      "error"
+    );
+  }
+}
+
+// Make new functions globally accessible
+window.showCreateTableModal = showCreateTableModal;
+window.loadChannelTables = loadChannelTables;
+window.deleteChannelTable = deleteChannelTable;
+window.viewTableSchema = viewTableSchema;
+window.previewTableName = previewTableName;
+
+/**
+ * Navigate to Data Schema tab and select a specific table
+ */
+function manageTableFields(tableId) {
+  // Set the selected table
+  channelConfigState.selectedTableId = tableId.toString();
+
+  // Switch to Data Schema tab
+  const headersTab = document.getElementById("headers-tab");
+  if (headersTab) {
+    const tab = new bootstrap.Tab(headersTab);
+    tab.show();
+  }
+
+  // Update dropdown and load fields
+  setTimeout(() => {
+    const selector = document.getElementById("table-selector");
+    if (selector) {
+      selector.value = tableId.toString();
+    }
+    onTableSelected(tableId.toString());
+  }, 100);
+}
+
+window.manageTableFields = manageTableFields;
+
+/**
+ * Populate the table selector dropdown with all tables for the channel
+ */
+async function populateTableSelector() {
+  const channelId = channelConfigState.currentPlatform;
+  if (!channelId) return;
+
+  const selector = document.getElementById("table-selector");
+  if (!selector) return;
+
+  try {
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/${channelId}/tables`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const { tables } = response.data;
+
+    // Build options from ALL tables (now ALL default tables are in channel_tables with IDs)
+    let optionsHtml = "";
+
+    tables.forEach((table, index) => {
+      const typeEmoji = {
+        orders: "📦",
+        returns: "↩️",
+        inventory: "📊",
+        custom: "🔧",
+      };
+      const emoji = typeEmoji[table.table_type] || "📋";
+      const label = table.is_system ? "Default" : "Custom";
+      const selected = index === 0 ? "selected" : ""; // First one selected by default
+
+      optionsHtml += `<option value="${table.id}" data-table="${
+        table.table_name
+      }" ${selected}>${emoji} ${
+        table.display_name || table.table_name
+      } (${label})</option>`;
+    });
+
+    selector.innerHTML = optionsHtml;
+
+    // Store current selected table in state (use numeric ID, never "default")
+    // IMPORTANT: Don't override existing selection - preserve user's choice
+    if (!channelConfigState.selectedTableId && tables.length > 0) {
+      channelConfigState.selectedTableId = tables[0].id.toString(); // Use first table's ID as string
+    }
+
+    // Set the dropdown value WITHOUT triggering onchange
+    const currentOnChange = selector.onchange;
+    selector.onchange = null;
+    if (channelConfigState.selectedTableId) {
+      // Ensure the selected table ID exists in the tables list
+      const selectedTable = tables.find(t => t.id.toString() === channelConfigState.selectedTableId.toString());
+      if (selectedTable) {
+        selector.value = channelConfigState.selectedTableId.toString();
+      } else if (tables.length > 0) {
+        // If selected table doesn't exist, use first table
+        channelConfigState.selectedTableId = tables[0].id.toString();
+        selector.value = channelConfigState.selectedTableId.toString();
+      }
+    }
+    selector.onchange = currentOnChange;
+
+    // Manually load fields for the selected table (only once)
+    // Only load if we haven't loaded yet or if explicitly needed
+    if (channelConfigState.selectedTableId) {
+      const container = document.getElementById("fields-table-container");
+      // Only auto-load if container is empty or showing loading state
+      if (!container || !container.innerHTML || container.innerHTML.includes("Loading") || container.innerHTML.includes("Analyzing")) {
+        onTableSelected(channelConfigState.selectedTableId);
+      }
+    } else if (tables.length > 0) {
+      // Fallback: select first table if nothing is selected
+      const firstTableId = tables[0].id.toString();
+      channelConfigState.selectedTableId = firstTableId;
+      selector.value = firstTableId;
+      onTableSelected(firstTableId);
+    }
+  } catch (error) {
+    console.error("Failed to load tables for selector:", error);
+    const errorMsg = error.response?.data?.detail || error.message || "Unknown error";
+    selector.innerHTML = `
+      <option value="" disabled selected>Error loading tables</option>
+      <option value="" disabled>${errorMsg}</option>
+    `;
+    
+    // Show error in container
+    const container = document.getElementById("fields-table-container");
+    if (container) {
+      container.innerHTML = `
+        <div class="alert alert-danger">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          <strong>Failed to load tables:</strong> ${errorMsg}
+          <br><br>
+          <button class="btn btn-sm btn-primary" onclick="populateTableSelector();">
+            <i class="bi bi-arrow-clockwise me-1"></i>Retry
+          </button>
+        </div>
+      `;
+    }
+  }
+}
+
+/**
+ * Handle table selection from dropdown
+ */
+async function onTableSelected(tableValue) {
+  const channelId = channelConfigState.currentPlatform;
+  if (!channelId) {
+    console.log("No channelId, returning early");
+    return;
+  }
+
+  const container = document.getElementById("fields-table-container");
+  if (!container) return;
+
+  // Show loading state
+  container.innerHTML = `
+    <div class="text-center py-5 opacity-50">
+      <div class="spinner-grow text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+      <p class="fw-medium text-dark">Loading fields...</p>
+    </div>
+  `;
+
+  try {
+    const token = localStorage.getItem("access_token");
+    let tableId = tableValue;
+
+    // Handle "default" case - need to fetch tables first to get the actual table ID
+    if (tableValue === "default" || tableValue === "" || isNaN(parseInt(tableValue))) {
+      // Fetch tables list to find the default/first table
+      const tablesResponse = await axios.get(
+        `${API_BASE_URL}/api/mango/channels/${channelId}/tables`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const { tables } = tablesResponse.data;
+      
+      if (!tables || tables.length === 0) {
+        throw new Error("No tables found for this channel");
+      }
+
+      // Find default table (orders type or first table)
+      const defaultTable = tables.find(t => t.table_type === "orders") || tables[0];
+      tableId = defaultTable.id;
+      
+      // Update state and dropdown
+      channelConfigState.selectedTableId = tableId.toString();
+      const selector = document.getElementById("table-selector");
+      if (selector) {
+        selector.value = tableId.toString();
+      }
+    } else {
+      // Valid numeric table ID - UPDATE STATE IMMEDIATELY to prevent race conditions
+      channelConfigState.selectedTableId = tableId.toString();
+      
+      // Sync dropdown to match state
+      const selector = document.getElementById("table-selector");
+      if (selector && selector.value !== tableId.toString()) {
+        selector.value = tableId.toString();
+      }
+    }
+
+    // Fetch table details with fields
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/${channelId}/tables/${tableId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const table = response.data;
+    renderTableFields(table);
+  } catch (error) {
+    console.error("Failed to load table fields:", error);
+    const errorMessage = error.response?.data?.detail || error.message || "Unknown error";
+    container.innerHTML = `
+      <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Could not load fields: ${errorMessage}
+        <br><br>
+        <button class="btn btn-sm btn-outline-primary" onclick="onTableSelected('${tableValue}');">
+          <i class="bi bi-arrow-clockwise me-1"></i>Retry
+        </button>
+        <button class="btn btn-sm btn-outline-secondary ms-2" onclick="populateTableSelector();">
+          <i class="bi bi-arrow-clockwise me-1"></i>Reload Tables
+        </button>
+      </div>
+    `;
+  }
+}
+
+/**
+ * Render fields for a specific table
+ */
+function renderTableFields(table) {
+  const container = document.getElementById("fields-table-container");
+  if (!container) return;
+
+  if (!table.fields || table.fields.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-5">
+        <i class="bi bi-inbox display-1 text-muted opacity-25 mb-3"></i>
+        <h5>No Fields Defined</h5>
+        <p class="text-muted">This table has no custom fields yet.</p>
+        <button class="btn btn-primary rounded-pill px-4" onclick="showFieldEditModal()">
+          <i class="bi bi-plus-lg me-2"></i>Add First Field
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  // Build table HTML with action buttons
+  let html = `
+    <table class="table table-hover align-middle mb-0">
+      <thead class="bg-light">
+        <tr>
+          <th style="width: 40px;">#</th>
+          <th>HEADER NAME</th>
+          <th>FIELD KEY</th>
+          <th>TYPE</th>
+          <th>FLAGS</th>
+          <th>REQUIRED</th>
+          <th style="width: 120px;" class="text-end">ACTIONS</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  table.fields.forEach((field, idx) => {
+    html += `
+      <tr>
+        <td class="text-muted">${idx + 1}</td>
+        <td><strong>${field.field_name || field.field_key}</strong></td>
+        <td><code class="text-primary">${field.field_key}</code></td>
+        <td><span class="badge bg-primary">${field.field_type}</span></td>
+        <td>
+          ${
+            field.is_unique
+              ? '<span class="badge bg-info-subtle text-info me-1">Unique</span>'
+              : "—"
+          }
+          ${
+            field.is_indexed
+              ? '<span class="badge bg-warning-subtle text-warning">Indexed</span>'
+              : ""
+          }
+        </td>
+        <td>
+          ${
+            field.is_required
+              ? '<i class="bi bi-check-circle-fill text-success"></i>'
+              : "—"
+          }
+        </td>
+        <td class="text-end">
+          <div class="btn-group btn-group-sm" role="group">
+            <button class="btn btn-outline-primary btn-sm" 
+                    onclick="editTableField(${table.id}, ${field.id})" 
+                    title="Edit Field">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <button class="btn btn-outline-danger btn-sm" 
+                    onclick="deleteTableField(${table.id}, ${field.id}, '${field.field_name || field.field_key}')" 
+                    title="Delete Field">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  html += "</tbody></table>";
+  container.innerHTML = html;
+}
+
+/**
+ * Refresh table selector dropdown
+ */
+function refreshTableSelector() {
+  populateTableSelector();
+}
+
+// Make table selector functions globally accessible
+window.populateTableSelector = populateTableSelector;
+window.onTableSelected = onTableSelected;
+window.refreshTableSelector = refreshTableSelector;
+window.renderTableFields = renderTableFields;
+
 // ... existing code ...
 
 /**
@@ -418,38 +1324,106 @@ function renderPreviewPanel() {
 /**
  * Show Field Editor Modal (Add/Edit)
  */
-function showFieldEditModal(headerId = null) {
+async function showFieldEditModal(headerId = null, fieldData = null, tableId = null) {
+  // Support both legacy (headerId) and new (fieldData) ways of calling
   const header = headerId
-    ? channelConfigState.headers.find((h) => h.id === headerId)
-    : null;
+    ? (fieldData || channelConfigState.headers.find((h) => h.id === headerId))
+    : fieldData;
   const isEdit = !!header;
+  const channelId = channelConfigState.currentPlatform;
+  const editTableId = tableId || channelConfigState.selectedTableId;
+  
+  // Load tables for dropdown
+  let tablesOptions = '<option value="">Loading tables...</option>';
+  let defaultTableId = channelConfigState.selectedTableId || "";
+  
+  try {
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/${channelId}/tables`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    const { tables } = response.data;
+    if (tables && tables.length > 0) {
+      tablesOptions = tables.map(table => {
+        const typeEmoji = {
+          orders: "📦",
+          returns: "↩️",
+          inventory: "📊",
+          custom: "🔧",
+        };
+        const emoji = typeEmoji[table.table_type] || "📋";
+        const label = table.is_system ? "Default" : "Custom";
+        const selected = table.id.toString() === defaultTableId.toString() ? "selected" : "";
+        return `<option value="${table.id}" ${selected}>${emoji} ${table.display_name || table.table_name} (${label})</option>`;
+      }).join("");
+      
+      // If no table was selected, use the first one
+      if (!defaultTableId && tables.length > 0) {
+        defaultTableId = tables[0].id.toString();
+      }
+    } else {
+      tablesOptions = '<option value="">No tables available</option>';
+    }
+  } catch (error) {
+    console.error("Failed to load tables:", error);
+    tablesOptions = '<option value="">Error loading tables</option>';
+  }
 
   Swal.fire({
-    title: isEdit ? "Edit Field" : "Add New Field",
+    title: isEdit ? "Edit Field" : "Add New Data Field",
     html: `
       <form id="field-editor-form" class="text-start">
+        ${!isEdit ? `
         <div class="mb-3">
-          <label class="form-label">Field Name <span class="text-danger">*</span></label>
+          <label class="form-label fw-bold">
+            <i class="bi bi-database me-1"></i>Select Table <span class="text-danger">*</span>
+          </label>
+          <select class="form-select" id="field_table_id" required>
+            ${tablesOptions}
+          </select>
+          <small class="text-muted">Choose which table to add this field to</small>
+        </div>
+        ` : `
+        <div class="alert alert-info small mb-3">
+          <i class="bi bi-info-circle me-1"></i>Editing field in table context. Table cannot be changed.
+        </div>
+        `}
+        
+        <div class="mb-3">
+          <label class="form-label fw-bold">Display Name <span class="text-danger">*</span></label>
           <input type="text" class="form-control" id="field_name" 
                  value="${header ? header.field_name : ""}" required
-                 ${isEdit ? "readonly" : ""} placeholder="e.g. Customer Phone">
-          <small class="text-muted">This will create a column in the database.</small>
+                 ${isEdit ? "readonly" : ""} placeholder="e.g. Shipment ID">
+          <small class="text-muted">User-friendly name for this field</small>
         </div>
         
         <div class="mb-3">
-          <label class="form-label">Data Type <span class="text-danger">*</span></label>
+          <label class="form-label fw-bold">Database Key (Snake Case) <span class="text-danger">*</span></label>
+          <div class="input-group">
+            <input type="text" class="form-control" id="field_key" 
+                   value="${header ? header.field_key : ""}" required
+                   ${isEdit ? "readonly" : ""} placeholder="e.g. shipment_id">
+            <span class="input-group-text"><i class="bi bi-lock"></i></span>
+          </div>
+          <small class="text-muted">Auto-generated from display name (editable)</small>
+        </div>
+        
+        <div class="mb-3">
+          <label class="form-label fw-bold">Data Type <span class="text-danger">*</span></label>
           <select class="form-select" id="field_type" ${
             isEdit ? "disabled" : ""
           }>
             <option value="VARCHAR(255)" ${
               header?.field_type === "VARCHAR(255)" ? "selected" : ""
-            }>Text (VARCHAR)</option>
+            }>Text (Short) - Names, Titles</option>
             <option value="INT" ${
               header?.field_type === "INT" ? "selected" : ""
-            }>Number (INT)</option>
+            }>Number (Integer)</option>
             <option value="DECIMAL(10,2)" ${
               header?.field_type === "DECIMAL(10,2)" ? "selected" : ""
-            }>Decimal (Price/Amount)</option>
+            }>Decimal - Prices, Amounts</option>
             <option value="DATETIME" ${
               header?.field_type === "DATETIME" ? "selected" : ""
             }>Date & Time</option>
@@ -458,37 +1432,37 @@ function showFieldEditModal(headerId = null) {
             }>Yes/No (Boolean)</option>
             <option value="TEXT" ${
               header?.field_type === "TEXT" ? "selected" : ""
-            }>Long Text</option>
+            }>Long Text - Descriptions</option>
           </select>
         </div>
 
         <div class="mb-3">
-           <label class="form-label">Constraints</label>
+           <label class="form-label fw-bold">Data Integrity & Constraints</label>
            <div class="form-check">
              <input class="form-check-input" type="checkbox" id="is_required" 
                     ${header?.is_required ? "checked" : ""}>
-             <label class="form-check-label" for="is_required">Required (Not Null)</label>
-           </div>
-           <div class="form-check">
-             <input class="form-check-input" type="checkbox" id="is_primary_key" 
-                    ${header?.is_primary_key ? "checked" : ""} ${
-      isEdit ? "disabled" : ""
-    }>
-             <label class="form-check-label" for="is_primary_key">🔑 Primary Key (Unique Identifier)</label>
+             <label class="form-check-label" for="is_required">Value cannot be empty (NOT NULL)</label>
            </div>
            <div class="form-check">
              <input class="form-check-input" type="checkbox" id="is_unique" 
                     ${header?.is_unique ? "checked" : ""} ${
       isEdit ? "disabled" : ""
     }>
-             <label class="form-check-label" for="is_unique">Unique Value (No Duplicates)</label>
+             <label class="form-check-label" for="is_unique">No duplicate values allowed</label>
+           </div>
+           <div class="form-check">
+             <input class="form-check-input" type="checkbox" id="is_primary_key" 
+                    ${header?.is_primary_key ? "checked" : ""} ${
+      isEdit ? "disabled" : ""
+    }>
+             <label class="form-check-label" for="is_primary_key">Global unique identifier for rows</label>
            </div>
            <div class="form-check">
              <input class="form-check-input" type="checkbox" id="is_indexed" 
                     ${header?.is_indexed ? "checked" : ""} ${
       isEdit ? "disabled" : ""
     }>
-             <label class="form-check-label" for="is_indexed">Indexed (Faster Search)</label>
+             <label class="form-check-label" for="is_indexed">Optimize for faster searching</label>
            </div>
         </div>
 
@@ -500,25 +1474,73 @@ function showFieldEditModal(headerId = null) {
       </form>
     `,
     showCancelButton: true,
-    confirmButtonText: isEdit ? "Update Metadata" : "Create Field",
+    confirmButtonText: isEdit ? "Update Metadata" : "Save Changes",
+    cancelButtonText: "Cancel",
+    didOpen: () => {
+      // Auto-generate field_key from field_name when typing (only for new fields)
+      if (!isEdit) {
+        const fieldNameInput = document.getElementById("field_name");
+        const fieldKeyInput = document.getElementById("field_key");
+        
+        fieldNameInput.addEventListener("input", () => {
+          if (!fieldKeyInput.dataset.manualEdit) {
+            const autoKey = fieldNameInput.value
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "");
+            fieldKeyInput.value = autoKey;
+          }
+        });
+        
+        fieldKeyInput.addEventListener("input", () => {
+          fieldKeyInput.dataset.manualEdit = "true";
+        });
+      }
+    },
     preConfirm: () => {
       const name = document.getElementById("field_name").value;
       if (!name) {
         Swal.showValidationMessage("Field name is required");
         return false;
       }
+      
+      // For edit mode, use the tableId from the field's context
+      // For create mode, get from dropdown
+      const tableId = isEdit 
+        ? (editTableId || document.getElementById("field_table_id")?.value)
+        : document.getElementById("field_table_id")?.value;
+      
+      if (!isEdit && !tableId) {
+        Swal.showValidationMessage("Please select a table");
+        return false;
+      }
+      
+      if (isEdit && !tableId) {
+        Swal.showValidationMessage("Cannot determine table context for editing");
+        return false;
+      }
+      
+      const fieldKey = document.getElementById("field_key").value;
+      if (!fieldKey) {
+        Swal.showValidationMessage("Database key is required");
+        return false;
+      }
+      
       return {
         name: name,
+        field_key: fieldKey,
         type: document.getElementById("field_type").value,
         required: document.getElementById("is_required").checked,
         primary_key: document.getElementById("is_primary_key").checked,
         unique: document.getElementById("is_unique").checked,
         indexed: document.getElementById("is_indexed").checked,
+        table_id: tableId,
+        field_id: isEdit ? (header.id || headerId) : null,
       };
     },
   }).then(async (result) => {
     if (result.isConfirmed) {
-      handleSaveField(result.value, isEdit ? header.id : null);
+      handleSaveField(result.value, isEdit ? (header.id || headerId) : null);
     }
   });
 }
@@ -529,6 +1551,22 @@ function showFieldEditModal(headerId = null) {
 async function handleSaveField(fieldData, fieldId) {
   try {
     const platformId = channelConfigState.currentPlatform;
+    
+    // CRITICAL: Always use table_id from fieldData (from modal) - this is the source of truth
+    // Only fall back to state if modal didn't provide it (shouldn't happen in create mode)
+    const selectedTableId = fieldData.table_id || channelConfigState.selectedTableId;
+    
+    // Validation: Ensure we have a valid table ID
+    if (!selectedTableId || selectedTableId === "default") {
+      Swal.fire(
+        "Error",
+        "Table selection is required. Please select a table from the dropdown.",
+        "error"
+      );
+      return;
+    }
+    
+    console.log("handleSaveField: Using table_id:", selectedTableId, "from fieldData:", fieldData.table_id);
 
     // Check if it's a predefined platform (prevent schema mods)
     if (
@@ -542,24 +1580,85 @@ async function handleSaveField(fieldData, fieldId) {
       return;
     }
 
-    const payload = fieldData;
+    // Remove table_id from payload before sending
+    const { table_id, ...payload } = fieldData;
+    const token = localStorage.getItem("access_token");
 
     Swal.fire({ title: "Saving Field...", didOpen: () => Swal.showLoading() });
 
     if (fieldId) {
-      // UPDATE (Metadata only)
-      // Not fully implemented in this phase as per plan, mainly focus on Add/Delete
-      // But we can call the PUT endpoint if available
+      // UPDATE - Use table-specific endpoint if table_id is provided
+      let updateEndpoint;
+      if (selectedTableId && selectedTableId !== "default") {
+        updateEndpoint = `${API_BASE_URL}/api/mango/channels/${platformId}/tables/${selectedTableId}/fields/${fieldId}`;
+      } else {
+        updateEndpoint = `${API_BASE_URL}/api/mango/channels/${platformId}/fields/${fieldId}`;
+      }
+      
+      const response = await axios.put(updateEndpoint, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      // Get table_id from response for update as well
+      const responseTableId = response.data?.table_id || selectedTableId;
+      
+      Swal.fire("Success", "Field updated successfully", "success");
+      
+      // Reload the table where field was updated
+      if (responseTableId && responseTableId !== "default") {
+        channelConfigState.selectedTableId = responseTableId.toString();
+        const selector = document.getElementById("table-selector");
+        if (selector) {
+          selector.value = responseTableId.toString();
+        }
+        onTableSelected(responseTableId.toString());
+      }
+      return; // Exit early for update
     } else {
-      // CREATE
-      await axios.post(
-        `${API_BASE_URL}/api/mango/channels/${platformId}/fields`,
-        payload
-      );
-    }
+      // CREATE - check if targeting default table or custom table
+      let endpoint;
 
-    Swal.fire("Success", "Field saved successfully", "success");
-    loadPlatformConfiguration(); // Reload
+      if (selectedTableId && selectedTableId !== "default") {
+        // Custom table - use tables/{table_id}/fields endpoint
+        endpoint = `${API_BASE_URL}/api/mango/channels/${platformId}/tables/${selectedTableId}/fields`;
+      } else {
+        // Default table - use regular fields endpoint
+        endpoint = `${API_BASE_URL}/api/mango/channels/${platformId}/fields`;
+      }
+
+      const response = await axios.post(endpoint, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      // Get the actual table_id from response (backend confirms where field was created)
+      const responseTableId = response.data?.table_id || fieldData.table_id || selectedTableId;
+      
+      Swal.fire("Success", "Field saved successfully", "success");
+
+      // CRITICAL: Use the table_id from the response (backend confirms where field was created)
+      const actualTableId = responseTableId || fieldData.table_id || selectedTableId;
+      
+      // Update state to match the table where field was actually created
+      if (actualTableId && actualTableId !== "default") {
+        channelConfigState.selectedTableId = actualTableId.toString();
+        
+        // Sync dropdown to show correct table
+        const selector = document.getElementById("table-selector");
+        if (selector) {
+          selector.value = actualTableId.toString();
+        }
+        
+        // Reload fields for the CORRECT table
+        onTableSelected(actualTableId.toString());
+      } else {
+        // Fallback to state-based reload
+        if (selectedTableId && selectedTableId !== "default") {
+          onTableSelected(selectedTableId);
+        } else {
+          loadPlatformConfiguration();
+        }
+      }
+    }
   } catch (error) {
     Swal.fire(
       "Error",
@@ -570,7 +1669,102 @@ async function handleSaveField(fieldData, fieldId) {
 }
 
 /**
- * Delete Header / Field
+ * Edit Field from Table (Table-specific)
+ */
+async function editTableField(tableId, fieldId) {
+  const channelId = channelConfigState.currentPlatform;
+  if (!channelId || !tableId || !fieldId) return;
+
+  try {
+    const token = localStorage.getItem("access_token");
+    
+    // Fetch field details from the table
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/${channelId}/tables/${tableId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    const table = response.data;
+    const field = table.fields.find(f => f.id === fieldId);
+    
+    if (!field) {
+      Swal.fire("Error", "Field not found", "error");
+      return;
+    }
+    
+    // Show edit modal with field data
+    showFieldEditModal(fieldId, field, tableId);
+  } catch (error) {
+    Swal.fire(
+      "Error",
+      error.response?.data?.detail || "Failed to load field details",
+      "error"
+    );
+  }
+}
+
+/**
+ * Delete Field from Table (Table-specific with strict isolation)
+ */
+async function deleteTableField(tableId, fieldId, fieldName) {
+  const channelId = channelConfigState.currentPlatform;
+  if (!channelId || !tableId || !fieldId) return;
+
+  // Check if it's a predefined platform
+  if (
+    ["amazon", "flipkart", "meesho", "myntra", "shopify"].includes(channelId)
+  ) {
+    Swal.fire(
+      "Action Restricted",
+      "You cannot modify the schema of predefined platforms.",
+      "warning"
+    );
+    return;
+  }
+
+  const result = await Swal.fire({
+    title: "Delete Field?",
+    html: `
+      <p>Are you sure you want to delete field <strong>${fieldName}</strong>?</p>
+      <p class="text-danger fw-bold">
+        <i class="bi bi-exclamation-octagon"></i> WARNING: This will permanently delete the column metadata!
+      </p>
+      <p class="text-muted small">Note: The physical column may remain in the database but will be unused.</p>
+    `,
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "#d33",
+    confirmButtonText: "Yes, delete it!",
+  });
+
+  if (result.isConfirmed) {
+    try {
+      Swal.fire({ title: "Deleting...", didOpen: () => Swal.showLoading() });
+
+      const token = localStorage.getItem("access_token");
+      
+      // Use table-specific delete endpoint for strict isolation
+      await axios.delete(
+        `${API_BASE_URL}/api/mango/channels/${channelId}/tables/${tableId}/fields/${fieldId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      Swal.fire("Deleted!", "Field has been deleted.", "success");
+      
+      // Reload the current table
+      onTableSelected(tableId.toString());
+    } catch (error) {
+      Swal.fire(
+        "Error",
+        error.response?.data?.detail || "Failed to delete field",
+        "error"
+      );
+    }
+  }
+}
+
+/**
+ * Delete Header / Field (Legacy - for backward compatibility)
  */
 async function deleteHeader(headerId) {
   const header = channelConfigState.headers.find((h) => h.id === headerId);
@@ -621,6 +1815,10 @@ async function deleteHeader(headerId) {
     }
   }
 }
+
+// Make functions globally accessible
+window.editTableField = editTableField;
+window.deleteTableField = deleteTableField;
 
 // ============ MAPPING PANELS ============
 
@@ -1797,11 +2995,24 @@ async function showFieldEditModal(fieldId = null) {
             data
           );
         } else {
-          // Create new
-          await axios.post(
-            `${API_BASE_URL}/api/mango/channels/${channelConfigState.currentPlatform}/fields`,
-            data
-          );
+          // Create new - check if targeting default table or custom table
+          const selectedTableId = channelConfigState.selectedTableId;
+          let endpoint;
+
+          console.log("=== Advanced Field Editor Save ===");
+          console.log("selectedTableId:", selectedTableId);
+
+          if (selectedTableId && selectedTableId !== "default") {
+            // Custom table
+            endpoint = `${API_BASE_URL}/api/mango/channels/${channelConfigState.currentPlatform}/tables/${selectedTableId}/fields`;
+            console.log("Using CUSTOM table endpoint:", endpoint);
+          } else {
+            // Default table
+            endpoint = `${API_BASE_URL}/api/mango/channels/${channelConfigState.currentPlatform}/fields`;
+            console.log("Using DEFAULT table endpoint:", endpoint);
+          }
+
+          await axios.post(endpoint, data);
         }
         return true;
       } catch (error) {
@@ -2653,6 +3864,44 @@ async function showBulkImportModal() {
   const channelId = channelConfigState.currentPlatform;
   if (!channelId) return;
 
+  // Load tables for dropdown
+  let tablesOptions = '<option value="">Loading tables...</option>';
+  let defaultTableId = channelConfigState.selectedTableId || "";
+  
+  try {
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels/${channelId}/tables`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    const { tables } = response.data;
+    if (tables && tables.length > 0) {
+      tablesOptions = tables.map(table => {
+        const typeEmoji = {
+          orders: "📦",
+          returns: "↩️",
+          inventory: "📊",
+          custom: "🔧",
+        };
+        const emoji = typeEmoji[table.table_type] || "📋";
+        const label = table.is_system ? "Default" : "Custom";
+        const selected = table.id.toString() === defaultTableId.toString() ? "selected" : "";
+        return `<option value="${table.id}" ${selected}>${emoji} ${table.display_name || table.table_name} (${label})</option>`;
+      }).join("");
+      
+      // If no table was selected, use the first one
+      if (!defaultTableId && tables.length > 0) {
+        defaultTableId = tables[0].id.toString();
+      }
+    } else {
+      tablesOptions = '<option value="">No tables available</option>';
+    }
+  } catch (error) {
+    console.error("Failed to load tables:", error);
+    tablesOptions = '<option value="">Error loading tables</option>';
+  }
+
   const result = await Swal.fire({
     title: "Advanced Field Import",
     width: 800,
@@ -2667,6 +3916,16 @@ async function showBulkImportModal() {
         <p class="text-muted small mb-4">
           Quickly define your schema by importing from SQL definitions or uploading a sample file.
         </p>
+        
+        <div class="mb-4">
+          <label class="form-label fw-bold">
+            <i class="bi bi-database me-1"></i>Select Table <span class="text-danger">*</span>
+          </label>
+          <select class="form-select" id="import_table_id" required>
+            ${tablesOptions}
+          </select>
+          <small class="text-muted">Choose which table to import fields into</small>
+        </div>
         
         <ul class="nav nav-pills nav-fill mb-4 gap-2" role="tablist">
           <li class="nav-item" role="presentation">
@@ -2736,20 +3995,16 @@ async function showBulkImportModal() {
       });
     },
     preConfirm: async () => {
+      // Get selected table ID
+      const tableId = document.getElementById("import_table_id")?.value;
+      if (!tableId) {
+        Swal.showValidationMessage("Please select a table");
+        return false;
+      }
+
       // Check which tab is active (basic check via class)
       const sqlTab = document.getElementById("tab-sql");
       const isSql = sqlTab.classList.contains("active");
-
-      const previewArea = document.getElementById("import-preview-area");
-
-      // Access Confirm Button text to handle "Analyze" vs "Save" state?
-      // For simplicity, let's do: First click analyzes, shows preview. If preview shown, second click saves.
-      // However, SweetAlert preConfirm handles one action.
-      // We'll implement a two-step logic inside here or use a separate "Analyze" button inside HTML.
-
-      // BETTER UX: Add an "Analyze" button inside the HTML content, and make the main "Confirm" button be "Save Fields".
-      // But to keep it simple with Swal default buttons:
-      // We will do the analysis and then immediately save if valid.
 
       try {
         let extractedFields = [];
@@ -2785,47 +4040,43 @@ async function showBulkImportModal() {
         if (extractedFields.length === 0)
           throw new Error("No fields found to import");
 
-        // Now we have fields. We need to save them.
-        // In a real app we might show preview. Here allow direct save for speed.
-        // But let's verify with user?
-        // We can return the fields and trigger a second Swal or just save.
-
-        // Let's iterate and save each (or bulk save if backend supported).
-        // Backend `create_advanced_channel_table` handles bulk on creation.
-        // For EXISTING channel, we need to add fields one by one or add a bulk endpoint.
-        // Current backend `POST /fields` adds one.
-        // Let's rely on iterating frontend calls for now (simpler than new backend logic).
-
         const total = extractedFields.length;
         let saved = 0;
 
         Swal.showLoading(); // Switch to loading state
 
-        // We use the existing `saveFieldToBackend` logic logic
-        // But wait, `saveFieldToBackend` is inside `handleSaveField`.
-        // Let's create a helper or call API directly.
+        const token = localStorage.getItem("access_token");
+        
+        // Determine endpoint based on table selection
+        const endpoint = tableId && tableId !== "default"
+          ? `${API_BASE_URL}/api/mango/channels/${channelId}/tables/${tableId}/fields`
+          : `${API_BASE_URL}/api/mango/channels/${channelId}/fields`;
 
         for (const field of extractedFields) {
-          // Prepare payload matching `ChannelFieldCreateRequest` (implied)
-          // Actually we use `axios.post` in `handleSaveField` logic.
-          // Let's replicate that.
-
-          // Reuse `saveFieldFromImport` helper if we create one, or just inline.
-          await axios.post(
-            `${API_BASE_URL}/api/mango/channels/${channelId}/fields`,
-            {
-              name: field.field_name,
-              type: field.field_type,
-              required: field.is_required,
-              unique: field.is_unique,
-              primary_key: field.is_primary_key,
-              indexed: field.is_indexed,
-              // Default others
-              validation: "none",
-              on_duplicate: "skip",
-            }
-          );
-          saved++;
+          try {
+            await axios.post(
+              endpoint,
+              {
+                name: field.field_name,
+                field_key: field.field_key || field.field_name?.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+                type: field.field_type,
+                required: field.is_required || false,
+                unique: field.is_unique || false,
+                primary_key: field.is_primary_key || false,
+                indexed: field.is_indexed || false,
+                validation: "none",
+                on_duplicate: "skip",
+              },
+              {
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
+            saved++;
+          } catch (fieldError) {
+            // Log error but continue with other fields
+            console.error(`Failed to save field ${field.field_name}:`, fieldError);
+            // Don't increment saved count for failed fields
+          }
         }
 
         return { saved, total };
@@ -2842,11 +4093,16 @@ async function showBulkImportModal() {
     Swal.fire({
       icon: "success",
       title: "Import Successful",
-      text: `Added ${result.value.saved} fields to the schema.`,
+      text: `Added ${result.value.saved} of ${result.value.total} fields to the schema.`,
       timer: 2000,
     });
-    // Refresh list
-    loadChannelSchema(channelId);
+    // Refresh list based on selected table
+    const tableId = document.getElementById("import_table_id")?.value;
+    if (tableId && tableId !== "default") {
+      onTableSelected(tableId); // Reload custom table fields
+    } else {
+      loadPlatformConfiguration(); // Reload default table
+    }
   }
 }
 window.showBulkImportModal = showBulkImportModal;

@@ -124,10 +124,10 @@ function renderChannelsList(channels) {
                     </div>
                     
                     <div class="btn-group w-100" role="group">
-                        <button class="btn btn-outline-primary btn-sm" onclick="viewChannelDetails(${
+                        <button class="btn btn-outline-primary btn-sm" onclick="openChannelSettings(${
                           channel.id
-                        })">
-                            <i class="bi bi-eye"></i> View
+                        }, '${channel.channel_name.replace(/'/g, "\\'")}')">
+                            <i class="bi bi-gear"></i> Configure
                         </button>
                         <button class="btn btn-outline-success btn-sm" onclick="uploadOrdersToChannel(${
                           channel.id
@@ -141,8 +141,8 @@ function renderChannelsList(channels) {
                         </button>
                         <button class="btn btn-outline-danger btn-sm" onclick="deleteChannel(${
                           channel.id
-                        }, '${channel.channel_name}')">
-                            < class="bi bi-trash"></i>
+                        }, '${channel.channel_name.replace(/'/g, "\\'")}')">
+                            <i class="bi bi-trash"></i>
                         </button>
                     </div>
                 </div>
@@ -567,3 +567,18 @@ function editChannel(channelId) {
     icon: "info",
   });
 }
+
+/**
+ * Open channel settings page with proper name syncing
+ */
+function openChannelSettings(channelId, channelName) {
+  if (typeof openChannelConfig === "function") {
+    openChannelConfig(channelId, channelName);
+  } else {
+    // Fallback: navigate directly
+    window.location.hash = `channel_settings/${channelId}`;
+  }
+}
+
+// Make functions globally accessible
+window.openChannelSettings = openChannelSettings;

@@ -125,8 +125,8 @@ def generate_table_name(channel_name: str, company_id: int, db: Session) -> str:
     return table_name
 
 
-def create_channel_table(table_name: str, channel_id: int, company_id: int, db: Session):
-    """Create a new database table for the channel (SQLite compatible)"""
+def create_physical_channel_table(table_name: str, channel_id: int, company_id: int, db: Session):
+    """Create a new physical database table for the channel (SQLite compatible)"""
     sql = f"""
     CREATE TABLE IF NOT EXISTS {table_name} (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,6 +185,97 @@ def create_default_field_mappings(channel_id: int, db: Session):
             transformation_rule={"type": "direct"}
         )
         db.add(field_mapping)
+    
+    db.commit()
+
+
+def create_default_channel_tables(channel_id: int, channel_name: str, company_id: int, db: Session):
+    """Create default ChannelTable records and physical tables for a new channel"""
+    from .channel_master_models import ChannelTable
+    
+    # Sanitize channel name for table naming
+    clean_channel_name = sanitize_name(channel_name)
+    
+    # Define ALL default tables (including the main orders table)
+    default_tables = [
+        {
+            "suffix": "orders",
+            "display_name": "Orders",
+            "table_type": "orders",
+            "description": "Primary orders table",
+            "is_primary": True  # Special flag for the main table
+        },
+        {
+            "suffix": "physical_orders",
+            "display_name": "Physical Orders",
+            "table_type": "orders",
+            "description": "Physical product orders"
+        },
+        {
+            "suffix": "physical_return",
+            "display_name": "Physical Returns",
+            "table_type": "returns",
+            "description": "Physical product returns"
+        },
+        {
+            "suffix": "order_return",
+            "display_name": "Order Returns",
+            "table_type": "returns", 
+            "description": "Order-level returns and cancellations"
+        },
+        {
+            "suffix": "order_payment_line",
+            "display_name": "Payment Lines",
+            "table_type": "custom",
+            "description": "Payment transaction details"
+        },
+        {
+            "suffix": "final_order_report_mtr",
+            "display_name": "Final Order Report MTR",
+            "table_type": "custom",
+            "description": "Master transaction report"
+        }
+    ]
+    
+    for table_def in default_tables:
+        # Generate table name with channel prefix
+        table_name = f"{clean_channel_name}_{table_def['suffix']}"
+        
+        # Check if ChannelTable entry already exists
+        existing = db.query(ChannelTable).filter(
+            ChannelTable.channel_id == channel_id,
+            ChannelTable.table_name == table_name
+        ).first()
+        
+        if existing:
+            continue  # Skip if already exists
+        
+        try:
+            # Create ChannelTable metadata record
+            channel_table = ChannelTable(
+                channel_id=channel_id,
+                table_name=table_name,
+                table_type=table_def['table_type'],
+                display_name=f"{channel_name} {table_def['display_name']}",  # e.g., "Flipkart Orders"
+                description=table_def['description'],
+                is_active=True,
+                is_system=True,  # All default tables are system tables (non-deletable)
+                record_count=0
+            )
+            db.add(channel_table)
+            db.flush()  # Get the ID
+            
+            # Create physical database table (only if it doesn't exist)
+            # For the primary orders table, it might already be created
+            if not table_def.get('is_primary'):
+                create_physical_channel_table(table_name, channel_id, company_id, db)
+            
+            print(f"✅ Created ChannelTable entry: {table_name}")
+            
+        except Exception as e:
+            # Log error but don't fail the whole channel creation
+            print(f"Warning: Failed to create table {table_name}: {str(e)}")
+            continue
     
     db.commit()
 
@@ -274,9 +365,12 @@ async def create_channel(
                 )
         else:
             # Standard mode: use default table structure
-            create_channel_table(table_name, channel.id, company_id, db)
+            create_physical_channel_table(table_name, channel.id, company_id, db)
             # Create default field mappings for backward compatibility
             create_default_field_mappings(channel.id, db)
+        
+        # Create additional default tables for this channel
+        create_default_channel_tables(channel.id, channel.channel_name, company_id, db)
         
         db.commit()
         db.refresh(channel)
@@ -679,7 +773,15 @@ async def create_channel_field(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new field for a channel"""
+    """
+    DEPRECATED: Create a new field for a channel (legacy endpoint)
+    
+    This endpoint is kept for backward compatibility but should use table-specific endpoint:
+    POST /{channel_id}/tables/{table_id}/fields
+    
+    If no table_id is provided, it will find the default/primary table for the channel.
+    """
+    from .channel_master_models import ChannelTable
     
     # Verify channel exists and belongs to user's company
     channel = db.query(Channel).filter(
@@ -693,7 +795,20 @@ async def create_channel_field(
             detail="Channel not found"
         )
     
-    # Get normalized values using helper methods
+    # Find the default/primary table for this channel (orders table or first table)
+    default_table = db.query(ChannelTable).filter(
+        ChannelTable.channel_id == channel_id,
+        ChannelTable.is_active == True
+    ).order_by(ChannelTable.table_type == "orders").first()  # Prefer orders table
+    
+    if not default_table:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active table found for this channel. Please create a table first or use the table-specific endpoint: POST /{channel_id}/tables/{table_id}/fields"
+        )
+    
+    # Redirect to table-specific endpoint logic
+    # Get normalized values
     field_name = field.get_name()
     field_type = field.get_type()
     is_required = field.get_required()
@@ -707,10 +822,10 @@ async def create_channel_field(
             detail="Field name is required"
         )
     
-    # Generate field key from name (or use provided field_key)
+    # Generate field key
     field_key = field.field_key if field.field_key else field_name.lower().replace(" ", "_").replace("-", "_")
     
-    # System columns that cannot be created by user
+    # System columns check
     system_columns = {
         'id', 'channel_record_id', 'company_id', 'uploaded_by_user_id', 
         'uploaded_at', 'raw_data', 'is_synced_to_master', 'master_order_id',
@@ -718,89 +833,70 @@ async def create_channel_field(
     }
     
     if field_key.lower() in system_columns:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"'{field_key}' is a reserved system column and cannot be created"
-        )
+        raise HTTPException(status_code=400, detail=f"'{field_key}' is a reserved system column")
     
-    # Check if field already exists - use correct column name
-    existing_field = db.query(ChannelTableSchema).filter(
-        ChannelTableSchema.channel_id == channel_id,
+    # Check if field exists in schema for THIS TABLE
+    existing = db.query(ChannelTableSchema).filter(
+        ChannelTableSchema.channel_table_id == default_table.id,
         ChannelTableSchema.column_name == field_key
     ).first()
     
-    if existing_field:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Field '{field_key}' already exists"
-        )
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Field '{field_key}' already exists in table '{default_table.display_name}'")
     
-    # Map frontend types to SQL types (support both friendly names and SQL types)
+    # Check physical table
+    try:
+        inspector = inspect(db.bind)
+        existing_columns = [col['name'].lower() for col in inspector.get_columns(default_table.table_name)]
+        if field_key.lower() in existing_columns:
+        raise HTTPException(
+                status_code=409,
+                detail=f"Column '{field_key}' already exists in the database table '{default_table.table_name}'"
+        )
+    except Exception as e:
+        if "already exists" in str(e).lower():
+            raise HTTPException(status_code=409, detail=f"Column '{field_key}' already exists")
+    
+    # Type mapping
     type_mapping = {
-        # Friendly names
-        "Text": "VARCHAR(255)",
-        "Number": "INT",
-        "Decimal": "DECIMAL(10,2)",
-        "Date": "DATETIME",
-        "Select": "VARCHAR(100)",
-        "Boolean": "BOOLEAN",
-        "LongText": "TEXT",
-        # SQL types (from modal dropdown)
-        "VARCHAR(255)": "VARCHAR(255)",
-        "INT": "INT",
-        "DECIMAL(10,2)": "DECIMAL(10,2)",
-        "DATETIME": "DATETIME",
-        "BOOLEAN": "BOOLEAN",
-        "TEXT": "TEXT",
+        "Text": "VARCHAR(255)", "Number": "INT", "Decimal": "DECIMAL(10,2)",
+        "Date": "DATETIME", "Select": "VARCHAR(100)", "Boolean": "BOOLEAN",
+        "LongText": "TEXT", "VARCHAR(255)": "VARCHAR(255)", "INT": "INT",
+        "DECIMAL(10,2)": "DECIMAL(10,2)", "DATETIME": "DATETIME",
+        "BOOLEAN": "BOOLEAN", "TEXT": "TEXT"
     }
     
-    sql_type_base = type_mapping.get(field_type, field_type if '(' in str(field_type) else "VARCHAR(255)")
+    sql_type = type_mapping.get(field_type, field_type if '(' in str(field_type) else "VARCHAR(255)")
     
-    # Determine column_length from type
-    column_length = None
-    if "VARCHAR" in sql_type_base:
-        import re
-        match = re.search(r'\((\d+)\)', sql_type_base)
-        if match:
-            column_length = int(match.group(1))
-    
-    # Create schema entry using correct model attributes
+    # Create schema entry with channel_table_id
     schema_entry = ChannelTableSchema(
         channel_id=channel_id,
+        channel_table_id=default_table.id,  # CRITICAL: Link to specific table
         column_name=field_key,
-        field_name=field_name,  # Display name
-        column_type=sql_type_base,
-        column_length=column_length,
+        field_name=field_name,
+        column_type=sql_type,
         is_nullable=not is_required,
         is_required=is_required,
         is_unique=is_unique,
         is_primary_key=is_primary_key,
         is_indexed=is_indexed,
         on_duplicate_action=field.on_duplicate,
-        column_order=999  # Will be at the end
+        column_order=999
     )
     
     db.add(schema_entry)
     
-    # Add column to physical database table
     try:
-        # Build ALTER TABLE statement (SQLite compatible - no backticks)
-        full_type = sql_type_base
-            
-        alter_sql = f"ALTER TABLE {channel.table_name} ADD COLUMN {field_key} {full_type}"
-        
-        # Note: SQLite doesn't support NOT NULL, UNIQUE constraints in ALTER TABLE ADD COLUMN
-        # So we just add the column and store constraints in metadata
-            
+        # Add column to the CORRECT physical table
+        alter_sql = f"ALTER TABLE {default_table.table_name} ADD COLUMN {field_key} {sql_type}"
         db.execute(text(alter_sql))
         
-        # Create index if requested (SQLite compatible)
         if is_indexed and not is_primary_key:
-            index_sql = f"CREATE INDEX IF NOT EXISTS idx_{channel.table_name}_{field_key} ON {channel.table_name} ({field_key})"
             try:
-                db.execute(text(index_sql))
+                index_sql = f"CREATE INDEX IF NOT EXISTS idx_{default_table.table_name}_{field_key} ON {default_table.table_name} ({field_key})"
+            db.execute(text(index_sql))
             except Exception:
-                pass  # Index might already exist
+                pass
         
         db.commit()
         
@@ -808,7 +904,9 @@ async def create_channel_field(
             "success": True,
             "field_id": schema_entry.id,
             "field_key": field_key,
-            "message": f"Field '{field_name}' created successfully"
+            "table_id": default_table.id,
+            "table_name": default_table.table_name,
+            "message": f"Field '{field_name}' created successfully in table '{default_table.display_name}'"
         }
         
     except Exception as e:
@@ -850,7 +948,11 @@ async def update_channel_field(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update field metadata (name, required status, etc.) - metadata only, no schema changes"""
+    """
+    Update field metadata (name, required status, etc.) - metadata only, no schema changes
+    
+    NOTE: For table-specific updates, use: PUT /{channel_id}/tables/{table_id}/fields/{field_id}
+    """
     
     # Verify channel exists and belongs to user's company
     channel = db.query(Channel).filter(
@@ -864,7 +966,7 @@ async def update_channel_field(
             detail="Channel not found"
         )
     
-    # Find the field
+    # Find the field - MUST belong to this channel
     schema_entry = db.query(ChannelTableSchema).filter(
         ChannelTableSchema.id == field_id,
         ChannelTableSchema.channel_id == channel_id
@@ -873,7 +975,7 @@ async def update_channel_field(
     if not schema_entry:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Field not found"
+            detail="Field not found in this channel"
         )
     
     # Update allowed fields (metadata only - no physical table changes)
@@ -903,6 +1005,7 @@ async def update_channel_field(
         return {
             "success": True,
             "field_id": schema_entry.id,
+            "table_id": schema_entry.channel_table_id,
             "message": "Field updated successfully"
         }
     except Exception as e:
@@ -924,7 +1027,12 @@ async def delete_channel_field(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a field from a channel"""
+    """
+    Delete a field from a channel
+    
+    NOTE: For table-specific deletion, use: DELETE /{channel_id}/tables/{table_id}/fields/{field_id}
+    """
+    from .channel_master_models import ChannelTable
     
     # Verify channel exists and belongs to user's company
     channel = db.query(Channel).filter(
@@ -938,7 +1046,7 @@ async def delete_channel_field(
             detail="Channel not found"
         )
     
-    # Find the field
+    # Find the field - MUST belong to this channel
     schema_entry = db.query(ChannelTableSchema).filter(
         ChannelTableSchema.id == field_id,
         ChannelTableSchema.channel_id == channel_id
@@ -947,10 +1055,24 @@ async def delete_channel_field(
     if not schema_entry:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Field not found"
+            detail="Field not found in this channel"
         )
     
+    # Get table info for validation
+    table = None
+    if schema_entry.channel_table_id:
+        table = db.query(ChannelTable).filter(
+            ChannelTable.id == schema_entry.channel_table_id,
+            ChannelTable.channel_id == channel_id
+        ).first()
+        if not table:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Table not found for this field"
+            )
+    
     column_name = schema_entry.column_name
+    table_name = table.table_name if table else channel.table_name
     
     try:
         # Delete from schema table
@@ -964,7 +1086,9 @@ async def delete_channel_field(
         
         return {
             "success": True,
-            "message": f"Field '{column_name}' deleted successfully"
+            "table_id": schema_entry.channel_table_id,
+            "table_name": table_name,
+            "message": f"Field '{column_name}' deleted successfully from table '{table_name}'"
         }
     except Exception as e:
         db.rollback()
@@ -1202,49 +1326,49 @@ async def infer_schema_from_file(
 ):
     """Infer fields from CSV or Excel file headers"""
     try:
-        headers = []
-        sample_data = None
-        
-        if file.filename.endswith('.csv'):
-            content = await file.read()
-            decoded = content.decode('utf-8')
+    headers = []
+    sample_data = None
+    
+    if file.filename.endswith('.csv'):
+        content = await file.read()
+        decoded = content.decode('utf-8')
+        try:
+            f = io.StringIO(decoded)
+            reader = csv.reader(f)
+            headers = next(reader)
             try:
-                f = io.StringIO(decoded)
-                reader = csv.reader(f)
-                headers = next(reader)
-                try:
-                    sample_data = next(reader)
-                except StopIteration:
-                    pass
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
-                 
-        elif file.filename.endswith(('.xlsx', '.xls')):
-            try:
-                contents = await file.read()
-                df = pd.read_excel(io.BytesIO(contents), nrows=5)
-                headers = df.columns.tolist()
-                if not df.empty:
-                    sample_data = df.iloc[0].tolist()
-                    # Convert numpy types to native python types for JSON serialization
-                    sample_data = [
-                        x.item() if hasattr(x, 'item') else x 
-                        for x in sample_data
-                    ]
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Failed to parse Excel file: {str(e)}")
-                
-        else:
-            raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported.")
+                sample_data = next(reader)
+            except StopIteration:
+                pass
+        except Exception as e:
+             raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
              
-        fields = []
-        for i, header in enumerate(headers):
-            field_name = str(header).strip() if header else f"column_{i}"
-            field_type = "Text"
+    elif file.filename.endswith(('.xlsx', '.xls')):
+        try:
+            contents = await file.read()
+            df = pd.read_excel(io.BytesIO(contents), nrows=5)
+            headers = df.columns.tolist()
+            if not df.empty:
+                sample_data = df.iloc[0].tolist()
+                # Convert numpy types to native python types for JSON serialization
+                sample_data = [
+                    x.item() if hasattr(x, 'item') else x 
+                    for x in sample_data
+                ]
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse Excel file: {str(e)}")
             
-            # Infer type from sample data if available
-            if sample_data and len(sample_data) > i:
-                val = sample_data[i]
+    else:
+        raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported.")
+         
+    fields = []
+    for i, header in enumerate(headers):
+            field_name = str(header).strip() if header else f"column_{i}"
+        field_type = "Text"
+        
+        # Infer type from sample data if available
+        if sample_data and len(sample_data) > i:
+            val = sample_data[i]
                 # Handle None values and pandas NaT
                 if val is None or (hasattr(val, '__class__') and 'NaT' in str(type(val))):
                     field_type = "Text"
@@ -1256,7 +1380,7 @@ async def infer_schema_from_file(
                         if pd.isna(val):
                             field_type = "Text"
                         else:
-                            field_type = "Number"
+                field_type = "Number"
                     except:
                         field_type = "Number"
                 elif isinstance(val, str):
@@ -1269,23 +1393,23 @@ async def infer_schema_from_file(
                         pass
                     # Check for boolean strings
                     if val_str.lower() in ['true', 'false', 'yes', 'no', '0', '1']:
-                        field_type = "Select"
+                 field_type = "Select"
                 # Basic date check
                 elif hasattr(val, 'strftime'):
                     field_type = "Date"
-                
-            fields.append({
-                "field_name": field_name,
-                "field_key": field_name.lower().replace(" ", "_").replace("-", "_"),
-                "field_type": field_type,
-                "is_required": False,
-                "is_primary_key": False, 
-                "is_unique": False,
-                "is_indexed": False
-            })
             
-        return {"fields": fields}
+        fields.append({
+            "field_name": field_name,
+                "field_key": field_name.lower().replace(" ", "_").replace("-", "_"),
+            "field_type": field_type,
+            "is_required": False,
+            "is_primary_key": False, 
+            "is_unique": False,
+            "is_indexed": False
+        })
         
+    return {"fields": fields}
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1296,3 +1420,589 @@ async def infer_schema_from_file(
 
 
 # Endpoint moved to before /{channel_id} routes
+
+
+# ============ Channel Tables (Multi-Table Support) ============
+
+class ChannelTableCreateRequest(BaseModel):
+    """Request to create a new table for a channel"""
+    table_name: str  # Custom table name
+    table_type: str = "orders"  # orders, returns, inventory, custom
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    fields: Optional[List[FieldConfigRequest]] = None
+
+
+class ChannelTableResponse(BaseModel):
+    """Response for channel table"""
+    id: int
+    channel_id: int
+    table_name: str
+    table_type: str
+    display_name: Optional[str]
+    description: Optional[str]
+    is_active: bool
+    record_count: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+@router.get("/{channel_id}/tables")
+async def list_channel_tables(
+    channel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all tables for a specific channel"""
+    from .channel_master_models import ChannelTable
+    
+    # Verify channel exists and belongs to user's company
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Channel not found"
+        )
+    
+    # Get all tables for this channel
+    tables = db.query(ChannelTable).filter(
+        ChannelTable.channel_id == channel_id
+    ).order_by(ChannelTable.created_at.desc()).all()
+    
+    return {
+        "channel_id": channel_id,
+        "channel_name": channel.channel_name,
+        "default_table": channel.table_name,  # Legacy default table
+        "tables": [
+            {
+                "id": t.id,
+                "table_name": t.table_name,
+                "table_type": t.table_type,
+                "display_name": t.display_name or t.table_name,
+                "description": t.description,
+                "is_active": t.is_active,
+                "is_system": t.is_system,  # Flag for non-deletable system tables
+                "record_count": t.record_count,
+                "created_at": t.created_at.isoformat() if t.created_at else None
+            }
+            for t in tables
+        ]
+    }
+
+
+@router.post("/{channel_id}/tables")
+async def create_channel_table(
+    channel_id: int,
+    request: ChannelTableCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new table for an existing channel"""
+    from .channel_master_models import ChannelTable
+    
+    # Verify channel exists and belongs to user's company
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+            Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Channel not found"
+        )
+    
+    # Sanitize and validate table name
+    clean_table_name = sanitize_name(request.table_name)
+    if not clean_table_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid table name. Use alphanumeric characters and underscores only."
+        )
+    
+    # Check if table name already exists
+    inspector = inspect(db.bind)
+    existing_tables = inspector.get_table_names()
+    
+    if clean_table_name in existing_tables:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Table '{clean_table_name}' already exists in database"
+        )
+    
+    # Check if table name exists in ChannelTable registry
+    existing_entry = db.query(ChannelTable).filter_by(table_name=clean_table_name).first()
+    if existing_entry:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Table name '{clean_table_name}' is already registered"
+        )
+    
+    try:
+        # Create ChannelTable record
+        channel_table = ChannelTable(
+            channel_id=channel_id,
+            table_name=clean_table_name,
+            table_type=request.table_type,
+            display_name=request.display_name or request.table_name,
+            description=request.description,
+            is_active=True,
+            record_count=0
+        )
+        db.add(channel_table)
+        db.flush()  # Get the ID
+        
+        # Create physical database table
+        from .channel_advanced_helpers import create_advanced_channel_table, store_field_configurations
+        
+        if request.fields and len(request.fields) > 0:
+            create_advanced_channel_table(
+                table_name=clean_table_name,
+                channel_id=channel_id,
+                company_id=current_user.company_id,
+                field_configs=request.fields,
+                db=db
+            )
+            store_field_configurations(
+                channel_id=channel_id,
+                field_configs=request.fields,
+                db=db,
+                channel_table_id=channel_table.id
+            )
+        else:
+            # Create default table structure
+            create_physical_channel_table(clean_table_name, channel_id, current_user.company_id, db)
+        
+        db.commit()
+        db.refresh(channel_table)
+        
+        return {
+            "success": True,
+            "message": f"Table '{clean_table_name}' created successfully",
+            "table": {
+                "id": channel_table.id,
+                "table_name": channel_table.table_name,
+                "table_type": channel_table.table_type,
+                "display_name": channel_table.display_name,
+                "description": channel_table.description
+            }
+        }
+        
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create table: {str(e)}"
+        )
+
+
+@router.get("/{channel_id}/tables/{table_id}")
+async def get_channel_table(
+    channel_id: int,
+    table_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get details of a specific channel table"""
+    from .channel_master_models import ChannelTable
+    
+    # Verify channel and get table
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    table = db.query(ChannelTable).filter(
+        ChannelTable.id == table_id,
+        ChannelTable.channel_id == channel_id
+    ).first()
+    
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    
+    # Get schema for this table
+    schema_entries = db.query(ChannelTableSchema).filter(
+        ChannelTableSchema.channel_table_id == table_id
+    ).order_by(ChannelTableSchema.column_order).all()
+    
+    return {
+        "id": table.id,
+        "channel_id": channel_id,
+        "table_name": table.table_name,
+        "table_type": table.table_type,
+        "display_name": table.display_name,
+        "description": table.description,
+        "is_active": table.is_active,
+        "record_count": table.record_count,
+        "fields": [
+            {
+                "id": s.id,
+                "field_name": s.field_name or s.column_name,
+                "field_key": s.column_name,
+                "field_type": s.column_type,
+                "is_required": s.is_required,
+                "is_unique": s.is_unique,
+                "is_indexed": s.is_indexed
+            }
+            for s in schema_entries
+        ]
+    }
+
+
+@router.delete("/{channel_id}/tables/{table_id}")
+async def delete_channel_table(
+    channel_id: int,
+    table_id: int,
+    confirm: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a channel table (requires confirmation)"""
+    from .channel_master_models import ChannelTable
+    
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Deletion requires confirmation (set confirm=true)"
+        )
+    
+    # Verify channel
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    table = db.query(ChannelTable).filter(
+        ChannelTable.id == table_id,
+        ChannelTable.channel_id == channel_id
+    ).first()
+    
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    
+    # Prevent deletion of system tables
+    if table.is_system:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot delete system tables. System tables are automatically created and managed."
+        )
+    
+    table_name = table.table_name
+    
+    try:
+        # Drop physical table
+        db.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
+        
+        # Delete schema entries
+        db.query(ChannelTableSchema).filter(
+            ChannelTableSchema.channel_table_id == table_id
+        ).delete()
+        
+        # Delete table record
+        db.delete(table)
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Table '{table_name}' deleted successfully"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete table: {str(e)}"
+        )
+
+
+# ============ Add Field to Custom Table ============
+
+@router.post("/{channel_id}/tables/{table_id}/fields")
+async def create_table_field(
+    channel_id: int,
+    table_id: int,
+    field: ChannelFieldCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new field for a specific channel table"""
+    from .channel_master_models import ChannelTable
+    
+    # Verify channel
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Verify table
+    table = db.query(ChannelTable).filter(
+        ChannelTable.id == table_id,
+        ChannelTable.channel_id == channel_id
+    ).first()
+    
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    
+    # Get normalized values
+    field_name = field.get_name()
+    field_type = field.get_type()
+    is_required = field.get_required()
+    is_unique = field.get_unique()
+    is_primary_key = field.get_primary_key()
+    is_indexed = field.get_indexed()
+    
+    if not field_name:
+        raise HTTPException(status_code=400, detail="Field name is required")
+    
+    # Generate field key
+    field_key = field.field_key if field.field_key else field_name.lower().replace(" ", "_").replace("-", "_")
+    
+    # System columns check
+    system_columns = {
+        'id', 'channel_record_id', 'company_id', 'uploaded_by_user_id', 
+        'uploaded_at', 'raw_data', 'is_synced_to_master', 'master_order_id',
+        'synced_at', 'created_at', 'updated_at'
+    }
+    
+    if field_key.lower() in system_columns:
+        raise HTTPException(status_code=400, detail=f"'{field_key}' is a reserved system column")
+    
+    # Check if field exists in schema
+    existing = db.query(ChannelTableSchema).filter(
+        ChannelTableSchema.channel_table_id == table_id,
+        ChannelTableSchema.column_name == field_key
+    ).first()
+    
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Field '{field_key}' already exists in schema")
+    
+    # Also check if column exists in physical database table
+    try:
+        inspector = inspect(db.bind)
+        existing_columns = [col['name'].lower() for col in inspector.get_columns(table.table_name)]
+        if field_key.lower() in existing_columns:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Column '{field_key}' already exists in the database table"
+            )
+    except Exception as e:
+        if "already exists" in str(e).lower():
+            raise HTTPException(status_code=409, detail=f"Column '{field_key}' already exists")
+
+    
+    # Type mapping
+    type_mapping = {
+        "Text": "VARCHAR(255)", "Number": "INT", "Decimal": "DECIMAL(10,2)",
+        "Date": "DATETIME", "Select": "VARCHAR(100)", "Boolean": "BOOLEAN",
+        "LongText": "TEXT", "VARCHAR(255)": "VARCHAR(255)", "INT": "INT",
+        "DECIMAL(10,2)": "DECIMAL(10,2)", "DATETIME": "DATETIME",
+        "BOOLEAN": "BOOLEAN", "TEXT": "TEXT"
+    }
+    
+    sql_type = type_mapping.get(field_type, field_type if '(' in str(field_type) else "VARCHAR(255)")
+    
+    # Create schema entry with channel_table_id
+    # CRITICAL: Ensure channel_table_id is set correctly for strict table isolation
+    schema_entry = ChannelTableSchema(
+        channel_id=channel_id,
+        channel_table_id=table_id,  # Link to specific table - CRITICAL for isolation
+        column_name=field_key,
+        field_name=field_name,
+        column_type=sql_type,
+        is_nullable=not is_required,
+        is_required=is_required,
+        is_unique=is_unique,
+        is_primary_key=is_primary_key,
+        is_indexed=is_indexed,
+        column_order=999
+    )
+    
+    db.add(schema_entry)
+    
+    try:
+        # Add column to the CORRECT physical table
+        alter_sql = f"ALTER TABLE {table.table_name} ADD COLUMN {field_key} {sql_type}"
+        db.execute(text(alter_sql))
+        
+        # Create index if requested
+        if is_indexed and not is_primary_key:
+            try:
+                index_sql = f"CREATE INDEX IF NOT EXISTS idx_{table.table_name}_{field_key} ON {table.table_name} ({field_key})"
+                db.execute(text(index_sql))
+            except Exception:
+                pass
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "field_id": schema_entry.id,
+            "field_key": field_key,
+            "table_id": table_id,  # Return table_id for frontend validation
+            "table_name": table.table_name,
+            "table_display_name": table.display_name,
+            "message": f"Field '{field_name}' added to table '{table.display_name or table.table_name}'"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to add column: {str(e)}")
+
+
+# ============ Update Field in Specific Table ============
+
+@router.put("/{channel_id}/tables/{table_id}/fields/{field_id}")
+async def update_table_field(
+    channel_id: int,
+    table_id: int,
+    field_id: int,
+    field: ChannelFieldUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update field metadata for a specific table - ensures strict table isolation"""
+    from .channel_master_models import ChannelTable
+    
+    # Verify channel
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Verify table belongs to channel
+    table = db.query(ChannelTable).filter(
+        ChannelTable.id == table_id,
+        ChannelTable.channel_id == channel_id
+    ).first()
+    
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    
+    # Find the field - MUST belong to THIS specific table
+    schema_entry = db.query(ChannelTableSchema).filter(
+        ChannelTableSchema.id == field_id,
+        ChannelTableSchema.channel_table_id == table_id,  # CRITICAL: Strict table isolation
+        ChannelTableSchema.channel_id == channel_id
+    ).first()
+    
+    if not schema_entry:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Field not found in table '{table.display_name}'"
+        )
+    
+    # Update allowed fields (metadata only)
+    display_name = field.name or field.field_name
+    if display_name is not None:
+        schema_entry.field_name = display_name
+    
+    is_req = field.required if field.required is not None else field.is_required
+    if is_req is not None:
+        schema_entry.is_required = is_req
+        schema_entry.is_nullable = not is_req
+    
+    if field.on_duplicate is not None:
+        schema_entry.on_duplicate_action = field.on_duplicate
+    
+    try:
+        db.commit()
+        db.refresh(schema_entry)
+        
+        return {
+            "success": True,
+            "field_id": schema_entry.id,
+            "table_id": table_id,
+            "table_name": table.table_name,
+            "message": f"Field updated successfully in table '{table.display_name}'"
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update field: {str(e)}")
+
+
+# ============ Delete Field from Specific Table ============
+
+@router.delete("/{channel_id}/tables/{table_id}/fields/{field_id}")
+async def delete_table_field(
+    channel_id: int,
+    table_id: int,
+    field_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a field from a specific table - ensures strict table isolation"""
+    from .channel_master_models import ChannelTable
+    
+    # Verify channel
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Verify table belongs to channel
+    table = db.query(ChannelTable).filter(
+        ChannelTable.id == table_id,
+        ChannelTable.channel_id == channel_id
+    ).first()
+    
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    
+    # Find the field - MUST belong to THIS specific table
+    schema_entry = db.query(ChannelTableSchema).filter(
+        ChannelTableSchema.id == field_id,
+        ChannelTableSchema.channel_table_id == table_id,  # CRITICAL: Strict table isolation
+        ChannelTableSchema.channel_id == channel_id
+    ).first()
+    
+    if not schema_entry:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Field not found in table '{table.display_name}'"
+        )
+    
+    column_name = schema_entry.column_name
+    
+    try:
+        # Delete from schema table
+        db.delete(schema_entry)
+        
+        # Note: SQLite doesn't support DROP COLUMN easily
+        # The column will remain in the physical table but be unused
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "table_id": table_id,
+            "table_name": table.table_name,
+            "message": f"Field '{column_name}' deleted successfully from table '{table.display_name}'"
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete field: {str(e)}")
+

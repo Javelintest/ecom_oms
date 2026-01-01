@@ -17,7 +17,7 @@ class Channel(Base):
     channel_name = Column(String(100), nullable=False)
     channel_code = Column(String(50), unique=True, nullable=False, index=True)
     channel_type = Column(String(50), default="marketplace")
-    table_name = Column(String(100), unique=True, nullable=False)
+    table_name = Column(String(100), unique=True, nullable=False)  # Legacy - default table
     description = Column(Text)
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -29,6 +29,29 @@ class Channel(Base):
     created_by = relationship("User", foreign_keys=[created_by_user_id])
     field_mappings = relationship("ChannelFieldMapping", back_populates="channel", cascade="all, delete-orphan")
     master_orders = relationship("MasterOrderSheet", back_populates="channel")
+    channel_tables = relationship("ChannelTable", back_populates="channel", cascade="all, delete-orphan")
+
+
+class ChannelTable(Base):
+    """Multiple tables per channel - allows custom table names and types"""
+    __tablename__ = "channel_tables"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False, index=True)
+    table_name = Column(String(100), unique=True, nullable=False)  # Custom table name
+    table_type = Column(String(50), default="orders")  # orders, returns, inventory, custom
+    display_name = Column(String(100))  # User-friendly name
+    description = Column(Text)
+    is_active = Column(Boolean, default=True)
+    is_system = Column(Boolean, default=False)  # System tables cannot be deleted
+    record_count = Column(Integer, default=0)  # Cache for quick stats
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    channel = relationship("Channel", back_populates="channel_tables")
+    table_schema = relationship("ChannelTableSchema", back_populates="channel_table", cascade="all, delete-orphan")
+
 
 
 class ChannelFieldMapping(Base):
@@ -100,7 +123,8 @@ class ChannelTableSchema(Base):
     __tablename__ = "channel_table_schema"
     
     id = Column(Integer, primary_key=True, index=True)
-    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False, index=True)
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False, index=True)  # Legacy support
+    channel_table_id = Column(Integer, ForeignKey("channel_tables.id"), nullable=True, index=True)  # New - link to specific table
     column_name = Column(String(100), nullable=False)  # field_key (technical name)
     field_name = Column(String(100))  # Display name
     column_type = Column(String(50), nullable=False)
@@ -117,6 +141,7 @@ class ChannelTableSchema(Base):
     
     # Relationships
     channel = relationship("Channel")
+    channel_table = relationship("ChannelTable", back_populates="table_schema")
 
 
 class DispatchChannelMapping(Base):

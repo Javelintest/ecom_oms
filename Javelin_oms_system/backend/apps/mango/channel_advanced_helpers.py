@@ -119,7 +119,8 @@ def create_advanced_channel_table(
 def store_field_configurations(
     channel_id: int,
     field_configs: List,
-    db: Session
+    db: Session,
+    channel_table_id: int = None  # New: link to specific ChannelTable
 ):
     """Store field configurations in channel_table_schema table"""
     
@@ -140,6 +141,7 @@ def store_field_configurations(
         
         schema_entry = ChannelTableSchema(
             channel_id=channel_id,
+            channel_table_id=channel_table_id,  # New field
             column_name=safe_name,
             field_name=field_name,
             column_type=sql_type,
@@ -152,6 +154,7 @@ def store_field_configurations(
             column_order=idx
         )
         db.add(schema_entry)
+
     
     try:
         db.commit()
