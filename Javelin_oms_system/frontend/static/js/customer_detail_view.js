@@ -10,6 +10,7 @@ let customerDetailState = {
   activeTab: "summary",
   ledger: [],
   balance: null,
+  analytics: null,
 };
 
 /**
@@ -456,187 +457,293 @@ async function renderCustomerLedgerTab(container) {
   `;
 
   try {
-    // Fetch balance and aging data
-    const response = await axios.get(
-      `${API_BASE_URL}/mango/customers/${customerId}/balance`
-    );
-    customerDetailState.balance = response.data;
+    // Fetch balance, aging, and analytics data
+    const [balanceResponse, analyticsResponse] = await Promise.all([
+      axios.get(`${API_BASE_URL}/mango/customers/${customerId}/balance`),
+      axios.get(`${API_BASE_URL}/mango/customers/${customerId}/analytics?months=12`)
+    ]);
+    
+    customerDetailState.balance = balanceResponse.data;
+    customerDetailState.analytics = analyticsResponse.data;
 
     const balance = customerDetailState.balance;
+    const analytics = customerDetailState.analytics;
     const availableCredit = balance.available_credit;
 
+    const stats = analytics?.statistics || {};
+    const creditUtilization = balance.credit_limit > 0 
+      ? Math.round((balance.current_balance / balance.credit_limit) * 100) 
+      : 0;
+
     container.innerHTML = `
-      <div class="row g-4">
-        <!-- Balance Overview -->
-        <div class="col-lg-8">
-          <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-light">
-              <h5 class="mb-0"><i class="bi bi-wallet2 me-2"></i>Account Balance</h5>
-            </div>
+      <!-- Enhanced Summary Cards -->
+      <div class="row g-3 mb-4">
+        <div class="col-md-3">
+          <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-              <div class="row text-center g-4">
-                <div class="col-md-3">
-                  <div class="text-muted small mb-2">Current Balance</div>
-                  <div class="h3 fw-bold text-nowrap ${
-                    balance.current_balance > 0
-                      ? "text-danger"
-                      : balance.current_balance < 0
-                      ? "text-success"
-                      : ""
+              <div class="d-flex align-items-center">
+                <div class="flex-grow-1">
+                  <div class="text-muted small mb-1">Current Balance</div>
+                  <div class="h4 fw-bold mb-0 ${
+                    balance.current_balance > 0 ? "text-danger" : 
+                    balance.current_balance < 0 ? "text-success" : ""
                   }">
                     ₹${formatNumber(balance.current_balance)}
                   </div>
                 </div>
-                <div class="col-md-3">
+                <div class="icon-box bg-danger bg-opacity-10 text-danger rounded p-3">
+                  <i class="bi bi-wallet2 fs-4"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center">
+                <div class="flex-grow-1">
+                  <div class="text-muted small mb-1">Total Sales</div>
+                  <div class="h4 fw-bold mb-0 text-success">
+                    ₹${formatNumber(stats.total_sales || 0)}
+                  </div>
+                  <small class="text-muted">Last 12 months</small>
+                </div>
+                <div class="icon-box bg-success bg-opacity-10 text-success rounded p-3">
+                  <i class="bi bi-graph-up-arrow fs-4"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center">
+                <div class="flex-grow-1">
+                  <div class="text-muted small mb-1">Avg Payment Days</div>
+                  <div class="h4 fw-bold mb-0 text-info">
+                    ${stats.avg_payment_days || 0}
+                  </div>
+                  <small class="text-muted">Days</small>
+                </div>
+                <div class="icon-box bg-info bg-opacity-10 text-info rounded p-3">
+                  <i class="bi bi-calendar-check fs-4"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center">
+                <div class="flex-grow-1">
+                  <div class="text-muted small mb-1">Credit Utilization</div>
+                  <div class="h4 fw-bold mb-0 ${
+                    creditUtilization > 90 ? "text-danger" : 
+                    creditUtilization > 70 ? "text-warning" : "text-success"
+                  }">
+                    ${creditUtilization}%
+                  </div>
+                  <small class="text-muted">${formatNumber(availableCredit)} available</small>
+                </div>
+                <div class="icon-box bg-primary bg-opacity-10 text-primary rounded p-3">
+                  <i class="bi bi-percent fs-4"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <!-- Left Column: Charts and Analysis -->
+        <div class="col-lg-8">
+          <!-- Account Balance & Credit Details -->
+          <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+              <h5 class="mb-0"><i class="bi bi-wallet2 me-2"></i>Account Balance & Credit</h5>
+              <span class="badge ${
+                balance.current_balance > balance.credit_limit
+                  ? "bg-danger"
+                  : balance.current_balance > balance.credit_limit * 0.9
+                  ? "bg-warning"
+                  : "bg-success"
+              }">
+                ${balance.current_balance > balance.credit_limit
+                  ? "Limit Exceeded"
+                  : balance.current_balance > balance.credit_limit * 0.9
+                  ? "High Usage"
+                  : "Good Standing"}
+              </span>
+            </div>
+            <div class="card-body">
+              <div class="row text-center g-4 mb-3">
+                <div class="col-md-4">
                   <div class="text-muted small mb-2">Credit Limit</div>
-                  <div class="h3 fw-bold text-nowrap">₹${formatNumber(
-                    balance.credit_limit
-                  )}</div>
+                  <div class="h3 fw-bold">₹${formatNumber(balance.credit_limit)}</div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                   <div class="text-muted small mb-2">Available Credit</div>
-                  <div class="h3 fw-bold text-nowrap text-primary">₹${formatNumber(
-                    availableCredit
-                  )}</div>
+                  <div class="h3 fw-bold text-primary">₹${formatNumber(availableCredit)}</div>
                 </div>
-                <div class="col-md-3">
-                  <div class="text-muted small mb-2">Credit Utilization</div>
-                  <div class="h3 fw-bold text-nowrap">${
-                    balance.credit_limit > 0
-                      ? Math.round(
-                          (balance.current_balance / balance.credit_limit) * 100
-                        )
-                      : 0
-                  }%</div>
+                <div class="col-md-4">
+                  <div class="text-muted small mb-2">Outstanding Invoices</div>
+                  <div class="h3 fw-bold text-warning">${stats.outstanding_count || 0}</div>
                 </div>
               </div>
               
-              <!-- Progress bar for credit utilization -->
-              <div class="mt-4">
-                <div class="progress" style="height: 10px;">
+              <!-- Credit Utilization Progress -->
+              <div class="mt-3">
+                <div class="d-flex justify-content-between mb-2">
+                  <span class="text-muted small">Credit Utilization</span>
+                  <span class="text-muted small fw-bold">${creditUtilization}%</span>
+                </div>
+                <div class="progress" style="height: 20px;">
                   <div class="progress-bar ${
-                    balance.current_balance > balance.credit_limit * 0.9
-                      ? "bg-danger"
-                      : balance.current_balance > balance.credit_limit * 0.7
-                      ? "bg-warning"
-                      : "bg-success"
+                    creditUtilization > 90 ? "bg-danger" : 
+                    creditUtilization > 70 ? "bg-warning" : "bg-success"
                   }" 
                        role="progressbar" 
-                       style="width: ${
-                         balance.credit_limit > 0
-                           ? Math.min(
-                               (balance.current_balance /
-                                 balance.credit_limit) *
-                                 100,
-                               100
-                             )
-                           : 0
-                       }%">
+                       style="width: ${Math.min(creditUtilization, 100)}%">
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Aging Analysis -->
-          <div class="card border-0 shadow-sm">
+          <!-- Aging Analysis with Chart -->
+          <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-light">
               <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Aging Analysis</h5>
             </div>
             <div class="card-body">
-              <div class="table-responsive">
-                <table class="table table-bordered">
-                  <thead class="bg-light">
-                    <tr>
-                      <th>Age Bucket</th>
-                      <th class="text-end">Amount</th>
-                      <th class="text-end">Percentage</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Current (0-30 days)</td>
-                      <td class="text-end fw-bold">₹${formatNumber(
-                        balance.aging_current
-                      )}</td>
-                      <td class="text-end">${
-                        balance.current_balance > 0
-                          ? Math.round(
-                              (balance.aging_current /
-                                balance.current_balance) *
-                                100
-                            )
-                          : 0
-                      }%</td>
-                    </tr>
-                    <tr>
-                      <td>31-60 days</td>
-                      <td class="text-end fw-bold text-warning">₹${formatNumber(
-                        balance.aging_30
-                      )}</td>
-                      <td class="text-end">${
-                        balance.current_balance > 0
-                          ? Math.round(
-                              (balance.aging_30 / balance.current_balance) * 100
-                            )
-                          : 0
-                      }%</td>
-                    </tr>
-                    <tr>
-                      <td>61-90 days</td>
-                      <td class="text-end fw-bold text-orange">₹${formatNumber(
-                        balance.aging_60
-                      )}</td>
-                      <td class="text-end">${
-                        balance.current_balance > 0
-                          ? Math.round(
-                              (balance.aging_60 / balance.current_balance) * 100
-                            )
-                          : 0
-                      }%</td>
-                    </tr>
-                    <tr>
-                      <td>90+ days</td>
-                      <td class="text-end fw-bold text-danger">₹${formatNumber(
-                        balance.aging_90_plus
-                      )}</td>
-                      <td class="text-end">${
-                        balance.current_balance > 0
-                          ? Math.round(
-                              (balance.aging_90_plus /
-                                balance.current_balance) *
-                                100
-                            )
-                          : 0
-                      }%</td>
-                    </tr>
-                    <tr class="table-secondary">
-                      <td><strong>Total Outstanding</strong></td>
-                      <td class="text-end"><strong>₹${formatNumber(
-                        balance.current_balance
-                      )}</strong></td>
-                      <td class="text-end"><strong>100%</strong></td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div class="row">
+                <div class="col-md-6">
+                  <canvas id="agingChart-${customerId}" height="200"></canvas>
+                </div>
+                <div class="col-md-6">
+                  <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0">
+                      <thead class="bg-light">
+                        <tr>
+                          <th>Age Bucket</th>
+                          <th class="text-end">Amount</th>
+                          <th class="text-end">%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td><span class="badge bg-success me-2">●</span>Current (0-30)</td>
+                          <td class="text-end fw-bold">₹${formatNumber(balance.aging_current)}</td>
+                          <td class="text-end">${
+                            balance.current_balance > 0
+                              ? Math.round((balance.aging_current / balance.current_balance) * 100)
+                              : 0
+                          }%</td>
+                        </tr>
+                        <tr>
+                          <td><span class="badge bg-warning me-2">●</span>31-60 days</td>
+                          <td class="text-end fw-bold text-warning">₹${formatNumber(balance.aging_30)}</td>
+                          <td class="text-end">${
+                            balance.current_balance > 0
+                              ? Math.round((balance.aging_30 / balance.current_balance) * 100)
+                              : 0
+                          }%</td>
+                        </tr>
+                        <tr>
+                          <td><span class="badge bg-orange me-2">●</span>61-90 days</td>
+                          <td class="text-end fw-bold">₹${formatNumber(balance.aging_60)}</td>
+                          <td class="text-end">${
+                            balance.current_balance > 0
+                              ? Math.round((balance.aging_60 / balance.current_balance) * 100)
+                              : 0
+                          }%</td>
+                        </tr>
+                        <tr>
+                          <td><span class="badge bg-danger me-2">●</span>90+ days</td>
+                          <td class="text-end fw-bold text-danger">₹${formatNumber(balance.aging_90_plus)}</td>
+                          <td class="text-end">${
+                            balance.current_balance > 0
+                              ? Math.round((balance.aging_90_plus / balance.current_balance) * 100)
+                              : 0
+                          }%</td>
+                        </tr>
+                        <tr class="table-secondary">
+                          <td><strong>Total Outstanding</strong></td>
+                          <td class="text-end"><strong>₹${formatNumber(balance.current_balance)}</strong></td>
+                          <td class="text-end"><strong>100%</strong></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Month-on-Month Trends Chart -->
-          <div class="card border-0 shadow-sm mt-4">
-            <div class="card-header bg-light">
-              <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Month-on-Month Trends</h5>
+          <!-- Payment Trends Chart -->
+          <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+              <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Payment Trends (Last 12 Months)</h5>
+              <select class="form-select form-select-sm" style="width: auto;" id="trendPeriod-${customerId}" onchange="updateTrendsChart(${customerId})">
+                <option value="6">6 Months</option>
+                <option value="12" selected>12 Months</option>
+                <option value="24">24 Months</option>
+              </select>
             </div>
             <div class="card-body">
-              <canvas id="trendsChart-${customerId}" height="80"></canvas>
+              <canvas id="trendsChart-${customerId}" height="100"></canvas>
+            </div>
+          </div>
+
+          <!-- Transaction Breakdown -->
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light">
+              <h5 class="mb-0"><i class="bi bi-pie-chart me-2"></i>Transaction Breakdown</h5>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                <div class="col-md-6">
+                  <canvas id="transactionChart-${customerId}" height="200"></canvas>
+                </div>
+                <div class="col-md-6">
+                  <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                      <thead class="bg-light">
+                        <tr>
+                          <th>Type</th>
+                          <th class="text-end">Count</th>
+                          <th class="text-end">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${Object.entries(analytics?.transaction_breakdown || {}).map(([type, data]) => `
+                          <tr>
+                            <td><span class="badge ${getTransactionTypeBadge(type)}">${type}</span></td>
+                            <td class="text-end">${data.count}</td>
+                            <td class="text-end fw-bold">₹${formatNumber(data.total_amount)}</td>
+                          </tr>
+                        `).join('')}
+                        ${Object.keys(analytics?.transaction_breakdown || {}).length === 0 ? `
+                          <tr>
+                            <td colspan="3" class="text-center text-muted py-3">No transactions yet</td>
+                          </tr>
+                        ` : ''}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Quick Actions Sidebar -->
+        <!-- Right Sidebar -->
         <div class="col-lg-4">
-          <div class="card border-0 shadow-sm">
+          <!-- Quick Actions -->
+          <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-light">
               <h5 class="mb-0"><i class="bi bi-lightning me-2"></i>Quick Actions</h5>
             </div>
@@ -653,89 +760,99 @@ async function renderCustomerLedgerTab(container) {
                 </button>
               </div>
               
-              <hr class="my-4">
+              <hr class="my-3">
               
               <div class="text-muted small mb-2">Account Status</div>
-              <div class="mb-3">
+              <div class="mb-0">
                 ${
                   balance.current_balance > balance.credit_limit
-                    ? '<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Credit limit exceeded!</div>'
+                    ? '<div class="alert alert-danger mb-0 py-2"><i class="bi bi-exclamation-triangle me-2"></i>Credit limit exceeded!</div>'
                     : balance.current_balance > balance.credit_limit * 0.9
-                    ? '<div class="alert alert-warning mb-0"><i class="bi bi-exclamation-circle me-2"></i>Nearing credit limit</div>'
-                    : '<div class="alert alert-success mb-0"><i class="bi bi-check-circle me-2"></i>Account in good standing</div>'
+                    ? '<div class="alert alert-warning mb-0 py-2"><i class="bi bi-exclamation-circle me-2"></i>Nearing credit limit</div>'
+                    : '<div class="alert alert-success mb-0 py-2"><i class="bi bi-check-circle me-2"></i>Account in good standing</div>'
                 }
               </div>
             </div>
           </div>
-          
-          <!-- Chart Filters Card -->
-          <div class="card border-0 shadow-sm mt-3">
-            <div class="card-header bg-light">
-              <h6 class="mb-0"><i class="bi bi-sliders me-2"></i>Chart Filters</h6>
+
+          <!-- Outstanding Invoices -->
+          <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+              <h6 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>Outstanding Invoices</h6>
+              <span class="badge bg-warning">${analytics?.outstanding_invoices?.length || 0}</span>
             </div>
-            <div class="card-body">
-              <!-- Metric Toggles -->
-              <div class="mb-3">
-                <label class="text-muted small mb-2 d-block">Metrics</label>
-                <div class="d-flex flex-column gap-2">
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="toggle-sales-${customerId}" checked>
-                    <label class="form-check-label d-flex align-items-center gap-2" for="toggle-sales-${customerId}">
-                      <span class="badge bg-success" style="width: 12px; height: 12px; padding: 0;"></span>
-                      <span class="small">Sales</span>
-                    </label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="toggle-returns-${customerId}" checked>
-                    <label class="form-check-label d-flex align-items-center gap-2" for="toggle-returns-${customerId}">
-                      <span class="badge bg-danger" style="width: 12px; height: 12px; padding: 0;"></span>
-                      <span class="small">Returns</span>
-                    </label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="toggle-payments-${customerId}" checked>
-                    <label class="form-check-label d-flex align-items-center gap-2" for="toggle-payments-${customerId}">
-                      <span class="badge bg-primary" style="width: 12px; height: 12px; padding: 0;"></span>
-                      <span class="small">Payments</span>
-                    </label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="toggle-expenses-${customerId}" checked>
-                    <label class="form-check-label d-flex align-items-center gap-2" for="toggle-expenses-${customerId}">
-                      <span class="badge bg-warning" style="width: 12px; height: 12px; padding: 0;"></span>
-                      <span class="small">Expenses</span>
-                    </label>
-                  </div>
+            <div class="card-body p-0" style="max-height: 400px; overflow-y: auto;">
+              ${analytics?.outstanding_invoices?.length > 0 ? `
+                <div class="list-group list-group-flush">
+                  ${analytics.outstanding_invoices.map(inv => `
+                    <div class="list-group-item border-0 border-bottom">
+                      <div class="d-flex justify-content-between align-items-start mb-1">
+                        <div>
+                          <div class="fw-bold">${inv.reference_number || 'N/A'}</div>
+                          <small class="text-muted">Due: ${inv.due_date ? new Date(inv.due_date).toLocaleDateString() : 'N/A'}</small>
+                        </div>
+                        <div class="text-end">
+                          <div class="fw-bold text-danger">₹${formatNumber(inv.amount)}</div>
+                          ${inv.days_overdue > 0 ? `<small class="badge bg-danger">${inv.days_overdue} days overdue</small>` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  `).join('')}
                 </div>
-              </div>
-              
-              <hr class="my-3">
-              
-              <!-- Date Range Selector -->
-              <div class="mb-3">
-                <label class="text-muted small mb-2 d-block">Time Period</label>
-                <select class="form-select form-select-sm" id="dateRange-${customerId}">
-                  <option value="6">Last 6 Months</option>
-                  <option value="12" selected>Last 12 Months</option>
-                  <option value="24">Last 24 Months</option>
-                </select>
-              </div>
-              
-              <hr class="my-3">
-              
-              <!-- Export Button -->
-              <button class="btn btn-outline-secondary btn-sm w-100" onclick="exportTrendsChart(${customerId})">
-                <i class="bi bi-download me-2"></i>Export Chart
-              </button>
+              ` : `
+                <div class="text-center py-4 text-muted">
+                  <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                  <small>No outstanding invoices</small>
+                </div>
+              `}
+            </div>
+          </div>
+
+          <!-- Recent Activity -->
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light">
+              <h6 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Activity</h6>
+            </div>
+            <div class="card-body p-0" style="max-height: 300px; overflow-y: auto;">
+              ${analytics?.recent_activity?.length > 0 ? `
+                <div class="list-group list-group-flush">
+                  ${analytics.recent_activity.map(act => `
+                    <div class="list-group-item border-0 border-bottom">
+                      <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0">
+                          <span class="badge ${getTransactionTypeBadge(act.type)}">${act.type}</span>
+                        </div>
+                        <div class="flex-grow-1 ms-2">
+                          <div class="small fw-bold">${act.reference || 'N/A'}</div>
+                          <div class="small text-muted">${act.description || ''}</div>
+                          <div class="small text-muted">${act.date ? new Date(act.date).toLocaleDateString() : ''}</div>
+                        </div>
+                        <div class="text-end">
+                          <div class="small fw-bold ${act.is_debit ? 'text-danger' : 'text-success'}">
+                            ${act.is_debit ? '-' : '+'}₹${formatNumber(act.amount)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : `
+                <div class="text-center py-4 text-muted">
+                  <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                  <small>No recent activity</small>
+                </div>
+              `}
             </div>
           </div>
         </div>
       </div>
     `;
 
-    // Render the trends chart after a short delay to ensure DOM is ready
+    // Render all charts after a short delay to ensure DOM is ready
     setTimeout(() => {
       renderTrendsChart(customerId);
+      renderAgingChart(customerId);
+      renderTransactionChart(customerId);
     }, 100);
   } catch (error) {
     console.error("Error loading ledger:", error);
@@ -984,28 +1101,43 @@ function generateMockTrendData() {
  * Render the Month-on-Month Trends chart
  */
 function renderTrendsChart(customerId) {
-  const trendData = generateMockTrendData();
-  const ctx = document.getElementById(`trendsChart-${customerId}`);
+  const analytics = customerDetailState.analytics;
+  if (!analytics || !analytics.monthly_trends) {
+    console.error("Analytics data not available");
+    return;
+  }
 
+  const ctx = document.getElementById(`trendsChart-${customerId}`);
   if (!ctx) {
     console.error("Trends chart canvas not found");
     return;
   }
 
   // Destroy existing chart instance if it exists
-  if (window.customerTrendsChart) {
-    window.customerTrendsChart.destroy();
+  const chartKey = `customerTrendsChart_${customerId}`;
+  if (window[chartKey]) {
+    window[chartKey].destroy();
   }
 
+  // Prepare data from analytics
+  const months = analytics.monthly_trends.map(t => {
+    const date = new Date(t.month + '-01');
+    return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+  });
+  const sales = analytics.monthly_trends.map(t => t.sales || 0);
+  const payments = analytics.monthly_trends.map(t => t.payments || 0);
+  const returns = analytics.monthly_trends.map(t => t.returns || 0);
+  const balances = analytics.monthly_trends.map(t => t.balance || 0);
+
   // Create new chart
-  window.customerTrendsChart = new Chart(ctx, {
+  window[chartKey] = new Chart(ctx, {
     type: "line",
     data: {
-      labels: trendData.months,
+      labels: months,
       datasets: [
         {
           label: "Sales",
-          data: trendData.sales,
+          data: sales,
           borderColor: "#10b981",
           backgroundColor: "rgba(16, 185, 129, 0.1)",
           tension: 0.3,
@@ -1013,7 +1145,7 @@ function renderTrendsChart(customerId) {
         },
         {
           label: "Returns",
-          data: trendData.returns,
+          data: returns,
           borderColor: "#ef4444",
           backgroundColor: "rgba(239, 68, 68, 0.1)",
           tension: 0.3,
@@ -1021,19 +1153,20 @@ function renderTrendsChart(customerId) {
         },
         {
           label: "Payments",
-          data: trendData.payments,
+          data: payments,
           borderColor: "#3b82f6",
           backgroundColor: "rgba(59, 130, 246, 0.1)",
           tension: 0.3,
           fill: true,
         },
         {
-          label: "Expenses",
-          data: trendData.expenses,
-          borderColor: "#f59e0b",
-          backgroundColor: "rgba(245, 158, 11, 0.1)",
+          label: "Balance",
+          data: balances,
+          borderColor: "#8b5cf6",
+          backgroundColor: "rgba(139, 92, 246, 0.1)",
           tension: 0.3,
           fill: true,
+          yAxisID: 'y1',
         },
       ],
     },
@@ -1064,18 +1197,171 @@ function renderTrendsChart(customerId) {
       scales: {
         y: {
           beginAtZero: true,
+          position: 'left',
           ticks: {
             callback: function (value) {
               return "₹" + formatNumber(value);
             },
           },
         },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          ticks: {
+            callback: function (value) {
+              return "₹" + formatNumber(value);
+            },
+          },
+          grid: {
+            drawOnChartArea: false,
+          },
+        },
       },
     },
   });
 
-  // Setup toggle event listeners
-  setupTrendsChartToggles(customerId);
+}
+
+/**
+ * Update trends chart when period changes
+ */
+async function updateTrendsChart(customerId) {
+  const periodSelect = document.getElementById(`trendPeriod-${customerId}`);
+  const months = periodSelect ? parseInt(periodSelect.value) : 12;
+  
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/mango/customers/${customerId}/analytics?months=${months}`
+    );
+    customerDetailState.analytics = response.data;
+    renderTrendsChart(customerId);
+  } catch (error) {
+    console.error("Error updating trends chart:", error);
+  }
+}
+
+/**
+ * Render Aging Analysis Pie Chart
+ */
+function renderAgingChart(customerId) {
+  const balance = customerDetailState.balance;
+  if (!balance) return;
+
+  const ctx = document.getElementById(`agingChart-${customerId}`);
+  if (!ctx) return;
+
+  const chartKey = `customerAgingChart_${customerId}`;
+  if (window[chartKey]) {
+    window[chartKey].destroy();
+  }
+
+  const agingData = [
+    balance.aging_current || 0,
+    balance.aging_30 || 0,
+    balance.aging_60 || 0,
+    balance.aging_90_plus || 0
+  ];
+
+  window[chartKey] = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Current (0-30)', '31-60 days', '61-90 days', '90+ days'],
+      datasets: [{
+        data: agingData,
+        backgroundColor: [
+          '#10b981',
+          '#f59e0b',
+          '#f97316',
+          '#ef4444'
+        ],
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label || '';
+              const value = context.parsed || 0;
+              const total = agingData.reduce((a, b) => a + b, 0);
+              const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+              return `${label}: ₹${formatNumber(value)} (${percentage}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Render Transaction Breakdown Pie Chart
+ */
+function renderTransactionChart(customerId) {
+  const analytics = customerDetailState.analytics;
+  if (!analytics || !analytics.transaction_breakdown) return;
+
+  const ctx = document.getElementById(`transactionChart-${customerId}`);
+  if (!ctx) return;
+
+  const chartKey = `customerTransactionChart_${customerId}`;
+  if (window[chartKey]) {
+    window[chartKey].destroy();
+  }
+
+  const breakdown = analytics.transaction_breakdown;
+  const labels = Object.keys(breakdown);
+  const data = labels.map(key => breakdown[key].total_amount);
+  const colors = {
+    'INVOICE': '#ef4444',
+    'PAYMENT': '#10b981',
+    'CREDIT_NOTE': '#3b82f6',
+    'DEBIT_NOTE': '#f59e0b',
+    'ADJUSTMENT': '#6b7280',
+    'OPENING': '#8b5cf6'
+  };
+
+  window[chartKey] = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: labels.map(l => colors[l] || '#6b7280'),
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label || '';
+              const value = context.parsed || 0;
+              const total = data.reduce((a, b) => a + b, 0);
+              const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+              return `${label}: ₹${formatNumber(value)} (${percentage}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
 }
 
 /**

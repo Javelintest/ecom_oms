@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func, and_, or_
 from typing import List, Optional
+from datetime import datetime, timedelta
 
 from ...common.dependencies import get_db, AppAccessChecker
 from ...common import models
@@ -1298,3 +1300,236 @@ def create_grn(grn: schemas.GRNCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_grn)
     return db_grn
+
+
+# --- Inventory Summary & Analytics Endpoints ---
+
+@router.get("/summary")
+def get_inventory_summary(
+    current_user: models.User = Depends(require_mango),
+    db: Session = Depends(get_db)
+):
+    """Get overall inventory summary statistics"""
+    
+    # Total items count
+    total_items = db.query(func.count(models.Product.id)).filter(
+        models.Product.company_id == current_user.company_id
+    ).scalar() or 0
+    
+    # Total unique SKUs
+    total_skus = db.query(func.count(func.distinct(models.Product.sku))).filter(
+        models.Product.company_id == current_user.company_id
+    ).scalar() or 0
+    
+    # Calculate total quantity from stock ledger (sum of all positive balances)
+    # For simplicity, we'll use a basic calculation
+    # In a real system, you'd calculate current stock from ledger entries
+    total_quantity = db.query(func.sum(models.StockLedger.quantity)).filter(
+        models.StockLedger.quantity > 0
+    ).scalar() or 0
+    
+    # Available quantity (simplified - would need proper stock calculation)
+    available_quantity = total_quantity  # Simplified
+    
+    # Total value at cost price
+    # Join products with stock ledger to calculate value
+    total_value = db.query(
+        func.sum(models.Product.purchase_rate * func.coalesce(models.StockLedger.quantity, 0))
+    ).outerjoin(
+        models.StockLedger,
+        models.Product.id == models.StockLedger.product_id
+    ).filter(
+        models.Product.company_id == current_user.company_id,
+        models.StockLedger.quantity > 0
+    ).scalar() or 0
+    
+    # Low stock items (below reorder level)
+    low_stock_count = db.query(func.count(models.Product.id)).filter(
+        models.Product.company_id == current_user.company_id,
+        models.Product.reorder_level.isnot(None),
+        # This would need actual stock calculation, simplified for now
+    ).scalar() or 0
+    
+    return {
+        "total_items": total_items,
+        "total_skus": total_skus,
+        "total_quantity": int(total_quantity) if total_quantity else 0,
+        "available_quantity": int(available_quantity) if available_quantity else 0,
+        "total_value": float(total_value) if total_value else 0.0,
+        "low_stock_count": low_stock_count
+    }
+
+
+@router.get("/warehouse-summary")
+def get_warehouse_summary(
+    current_user: models.User = Depends(require_mango),
+    db: Session = Depends(get_db)
+):
+    """Get inventory summary grouped by warehouse"""
+    
+    warehouses = db.query(models.Warehouse).filter(
+        models.Warehouse.company_id == current_user.company_id,
+        models.Warehouse.is_active == 1
+    ).all()
+    
+    warehouse_summaries = []
+    for wh in warehouses:
+        # Count items in this warehouse (from stock ledger)
+        item_count = db.query(func.count(func.distinct(models.StockLedger.product_id))).filter(
+            models.StockLedger.warehouse_id == wh.id
+        ).scalar() or 0
+        
+        # Total quantity in this warehouse
+        total_quantity = db.query(func.sum(models.StockLedger.quantity)).filter(
+            models.StockLedger.warehouse_id == wh.id,
+            models.StockLedger.quantity > 0
+        ).scalar() or 0
+        
+        # Total value in this warehouse
+        total_value = db.query(
+            func.sum(models.Product.purchase_rate * func.coalesce(models.StockLedger.quantity, 0))
+        ).join(
+            models.StockLedger,
+            models.Product.id == models.StockLedger.product_id
+        ).filter(
+            models.StockLedger.warehouse_id == wh.id,
+            models.StockLedger.quantity > 0
+        ).scalar() or 0
+        
+        warehouse_summaries.append({
+            "id": wh.id,
+            "name": wh.name,
+            "code": wh.code,
+            "item_count": item_count,
+            "total_quantity": int(total_quantity) if total_quantity else 0,
+            "total_value": float(total_value) if total_value else 0.0
+        })
+    
+    return {"warehouses": warehouse_summaries}
+
+
+@router.get("/aging")
+def get_inventory_aging(
+    current_user: models.User = Depends(require_mango),
+    db: Session = Depends(get_db)
+):
+    """Get inventory aging summary"""
+    
+    # Get all stock ledger entries with their creation dates
+    # Calculate aging based on last movement date
+    # For simplicity, we'll use created_at as the movement date
+    
+    now = datetime.now()
+    thirty_days_ago = now - timedelta(days=30)
+    sixty_days_ago = now - timedelta(days=60)
+    ninety_days_ago = now - timedelta(days=90)
+    
+    # Count items by age category
+    # This is simplified - in a real system, you'd track last movement per item/warehouse
+    aging_0_30 = db.query(func.count(func.distinct(models.StockLedger.product_id))).filter(
+        models.StockLedger.created_at >= thirty_days_ago
+    ).scalar() or 0
+    
+    aging_31_60 = db.query(func.count(func.distinct(models.StockLedger.product_id))).filter(
+        models.StockLedger.created_at >= sixty_days_ago,
+        models.StockLedger.created_at < thirty_days_ago
+    ).scalar() or 0
+    
+    aging_61_90 = db.query(func.count(func.distinct(models.StockLedger.product_id))).filter(
+        models.StockLedger.created_at >= ninety_days_ago,
+        models.StockLedger.created_at < sixty_days_ago
+    ).scalar() or 0
+    
+    aging_90_plus = db.query(func.count(func.distinct(models.StockLedger.product_id))).filter(
+        models.StockLedger.created_at < ninety_days_ago
+    ).scalar() or 0
+    
+    return {
+        "aging_0_30": aging_0_30,
+        "aging_31_60": aging_31_60,
+        "aging_61_90": aging_61_90,
+        "aging_90_plus": aging_90_plus
+    }
+
+
+@router.get("/aging/items")
+def get_aging_items(
+    as_of_date: Optional[str] = Query(None),
+    current_user: models.User = Depends(require_mango),
+    db: Session = Depends(get_db)
+):
+    """Get detailed inventory aging items list"""
+    
+    # Parse date if provided
+    if as_of_date:
+        try:
+            as_of = datetime.fromisoformat(as_of_date.replace('Z', '+00:00'))
+        except:
+            as_of = datetime.now()
+    else:
+        as_of = datetime.now()
+    
+    # Get stock ledger entries grouped by product and warehouse
+    # Calculate age based on last movement
+    aging_items = []
+    
+    # Get distinct product-warehouse combinations from stock ledger
+    product_warehouses = db.query(
+        models.StockLedger.product_id,
+        models.StockLedger.warehouse_id,
+        func.max(models.StockLedger.created_at).label('last_movement')
+    ).group_by(
+        models.StockLedger.product_id,
+        models.StockLedger.warehouse_id
+    ).all()
+    
+    for pw in product_warehouses:
+        product = db.query(models.Product).filter(
+            models.Product.id == pw.product_id,
+            models.Product.company_id == current_user.company_id
+        ).first()
+        
+        if not product:
+            continue
+        
+        warehouse = db.query(models.Warehouse).filter(
+            models.Warehouse.id == pw.warehouse_id
+        ).first()
+        
+        # Calculate age in days
+        last_movement = pw.last_movement
+        if last_movement:
+            age_days = (as_of - last_movement.replace(tzinfo=None)).days
+        else:
+            age_days = 0
+        
+        # Get current quantity for this product-warehouse
+        quantity = db.query(func.sum(models.StockLedger.quantity)).filter(
+            models.StockLedger.product_id == pw.product_id,
+            models.StockLedger.warehouse_id == pw.warehouse_id
+        ).scalar() or 0
+        
+        # Determine age category
+        if age_days <= 30:
+            age_category = "0-30 Days"
+        elif age_days <= 60:
+            age_category = "31-60 Days"
+        elif age_days <= 90:
+            age_category = "61-90 Days"
+        else:
+            age_category = "90+ Days"
+        
+        aging_items.append({
+            "item_name": product.name,
+            "sku": product.sku,
+            "warehouse_name": warehouse.name if warehouse else "Unknown",
+            "quantity": int(quantity) if quantity else 0,
+            "last_movement_date": last_movement.isoformat() if last_movement else None,
+            "age_days": age_days,
+            "age_category": age_category
+        })
+    
+    # Sort by age (oldest first)
+    aging_items.sort(key=lambda x: x['age_days'], reverse=True)
+    
+    return {"items": aging_items}

@@ -10,7 +10,8 @@ from .models import (
     CustomerReturns, CustomerReturnItems,
     SyncLogs, UserAppAccess, UserCompanies,
     PlatformItemMappings, ChannelDispatchMappings,
-    CustomFieldDefinitions, StockTransferItems
+    CustomFieldDefinitions, StockTransferItems,
+    Channels, ChannelTables, ChannelTableSchema
 )
 
 
@@ -191,6 +192,76 @@ class ChannelFieldDefinitionsAdmin(admin.ModelAdmin):
     list_filter = ['platform', 'field_type', 'is_required', 'company']
     search_fields = ['field_name', 'field_key']
     list_editable = ['is_required', 'display_order']
+
+
+# ============ MULTI-CHANNEL MANAGEMENT ============
+
+@admin.register(Channels)
+class ChannelsAdmin(admin.ModelAdmin):
+    list_display = ['id', 'channel_name', 'channel_type', 'company_id', 'is_active', 'created_at']
+    list_filter = ['channel_type', 'is_active', 'company_id']
+    search_fields = ['channel_name', 'channel_type']
+    list_editable = ['is_active']
+    readonly_fields = ['created_at', 'updated_at']
+    fieldsets = (
+        ('Basic Info', {
+            'fields': ('channel_name', 'channel_type', 'company_id', 'is_active')
+        }),
+        ('Configuration', {
+            'fields': ('api_config', 'sync_config'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(ChannelTables)
+class ChannelTablesAdmin(admin.ModelAdmin):
+    list_display = ['id', 'table_name', 'display_name', 'channel', 'table_type', 'is_active', 'is_system', 'record_count']
+    list_filter = ['table_type', 'is_active', 'is_system', 'channel']
+    search_fields = ['table_name', 'display_name', 'description']
+    list_editable = ['is_active']
+    readonly_fields = ['created_at', 'updated_at', 'record_count']
+    fieldsets = (
+        ('Table Info', {
+            'fields': ('channel', 'table_name', 'display_name', 'table_type', 'description')
+        }),
+        ('Status', {
+            'fields': ('is_active', 'is_system', 'record_count')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(ChannelTableSchema)
+class ChannelTableSchemaAdmin(admin.ModelAdmin):
+    list_display = ['id', 'field_name', 'column_name', 'channel_table', 'column_type', 'is_required', 'is_primary_key', 'is_unique', 'is_indexed']
+    list_filter = ['column_type', 'is_required', 'is_primary_key', 'is_unique', 'is_indexed', 'channel_table', 'channel']
+    search_fields = ['field_name', 'column_name', 'channel_table__table_name']
+    list_editable = ['is_required', 'is_unique', 'is_indexed']
+    readonly_fields = ['created_at']
+    fieldsets = (
+        ('Field Info', {
+            'fields': ('channel', 'channel_table', 'field_name', 'column_name', 'column_type', 'column_length')
+        }),
+        ('Constraints', {
+            'fields': ('is_required', 'is_nullable', 'is_primary_key', 'is_unique', 'is_indexed', 'on_duplicate_action')
+        }),
+        ('Defaults', {
+            'fields': ('default_value', 'column_order'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at',),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 @admin.register(OmsSyncConfig)

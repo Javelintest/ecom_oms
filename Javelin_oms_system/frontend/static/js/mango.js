@@ -466,7 +466,11 @@ function loadSection(sectionId) {
       break;
     case "settings":
       // Mango Application Settings
+      if (typeof renderSettingsModule === "function") {
+        renderSettingsModule(container, subSection);
+      } else {
       container.innerHTML = `<h2>Mango Settings</h2><p>Configure your Mango application settings here.</p>`;
+      }
       break;
     case "config":
       // OMS Integration Configuration
@@ -1871,16 +1875,76 @@ let inventoryState = {
   activeTab: "dashboard",
 };
 
-function renderInventoryModule(container, initialTab = "products") {
-  inventoryState.activeTab = "products";
+function renderInventoryModule(container, initialTab = "dashboard") {
+  // Ensure initialTab is set correctly
+  const tab = initialTab || "dashboard";
+  inventoryState.activeTab = tab;
 
-  // Minimal container for the items/products view
+  // Render inventory dashboard with tabs
   container.innerHTML = `
+    <div class="fade-in">
+      <!-- Inventory Header -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h2 class="fw-bold mb-1">
+            <i class="bi bi-box-seam me-2"></i>Inventory Management
+          </h2>
+          <p class="text-muted mb-0">View and manage your inventory across warehouses and channels</p>
+        </div>
+        <button class="btn btn-primary" onclick="showAddProductModal()">
+          <i class="bi bi-plus-lg me-2"></i>New Item
+        </button>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <ul class="nav nav-tabs mb-4" id="inventory-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link ${tab === 'dashboard' ? 'active' : ''}" 
+                  id="tab-dashboard" onclick="switchInventoryTab('dashboard')">
+            <i class="bi bi-speedometer2 me-2"></i>Summary
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link ${tab === 'warehouse' ? 'active' : ''}" 
+                  id="tab-warehouse" onclick="switchInventoryTab('warehouse')">
+            <i class="bi bi-building me-2"></i>Warehouse Wise
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link ${tab === 'channel' ? 'active' : ''}" 
+                  id="tab-channel" onclick="switchInventoryTab('channel')">
+            <i class="bi bi-diagram-3 me-2"></i>Channel Wise
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link ${tab === 'aging' ? 'active' : ''}" 
+                  id="tab-aging" onclick="switchInventoryTab('aging')">
+            <i class="bi bi-clock-history me-2"></i>Inventory Aging
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link ${tab === 'products' ? 'active' : ''}" 
+                  id="tab-products" onclick="switchInventoryTab('products')">
+            <i class="bi bi-list-ul me-2"></i>All Items
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link ${tab === 'reports' ? 'active' : ''}" 
+                  id="tab-reports" onclick="switchInventoryTab('reports')">
+            <i class="bi bi-file-earmark-bar-graph me-2"></i>Reports
+          </button>
+        </li>
+      </ul>
+
+      <!-- Tab Content -->
         <div id="inventory-content" class="fade-in"></div>
+    </div>
     `;
 
-  // Load products immediately
-  renderProductList(document.getElementById("inventory-content"));
+  // Load initial tab content after a brief delay to ensure DOM is ready
+  setTimeout(() => {
+    loadInventoryTabContent();
+  }, 100);
 }
 
 async function renderInternalFlowModule(container, flowType) {
@@ -2404,12 +2468,17 @@ window.cancelTransfer = async function (transferId) {
 
 function switchInventoryTab(tabName) {
   inventoryState.activeTab = tabName;
-  // Re-render tabs active state
-  document.querySelectorAll(".nav-tabs-custom .nav-link").forEach((link) => {
+  
+  // Update tab button active states
+  document.querySelectorAll("#inventory-tabs .nav-link").forEach((link) => {
     link.classList.remove("active");
-    if (link.getAttribute("onclick").includes(tabName))
-      link.classList.add("active");
   });
+  
+  const activeTab = document.getElementById(`tab-${tabName}`);
+  if (activeTab) {
+    activeTab.classList.add("active");
+  }
+  
   loadInventoryTabContent();
 }
 
@@ -2422,16 +2491,28 @@ async function loadInventoryTabContent() {
 
   switch (inventoryState.activeTab) {
     case "dashboard":
-      renderInventoryDashboard(container);
+      await renderInventoryDashboard(container);
+      break;
+    case "warehouse":
+      await renderWarehouseWiseInventory(container);
+      break;
+    case "channel":
+      await renderChannelWiseInventory(container);
+      break;
+    case "aging":
+      await renderInventoryAging(container);
+      break;
+    case "products":
+      await renderProductList(container);
+      break;
+    case "reports":
+      await renderInventoryReports(container);
       break;
     case "warehouses":
       await renderWarehouseList(container);
       break;
     case "vendors":
       await renderVendorList(container);
-      break;
-    case "products":
-      await renderProductList(container);
       break;
     case "pos":
       await renderPOList(container);
@@ -3486,6 +3567,766 @@ function openColumnCustomizer() {
     }
   });
 }
+
+// ============ INVENTORY DASHBOARD & VIEWS ============
+
+// Render Inventory Dashboard (Summary)
+async function renderInventoryDashboard(container) {
+  try {
+    const token = localStorage.getItem("access_token");
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    
+    // Fetch inventory summary
+    const summaryRes = await axios.get(
+      `${apiBase}/mango/inventory/summary`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const summary = summaryRes.data;
+
+    container.innerHTML = `
+      <div class="row g-4 mb-4">
+        <!-- Summary Cards -->
+        <div class="col-md-3">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <h6 class="text-muted mb-2">Total Items</h6>
+                  <h3 class="fw-bold mb-0">${summary.total_items || 0}</h3>
+                  <small class="text-muted">${summary.total_skus || 0} unique SKUs</small>
+                </div>
+                <div class="bg-primary bg-opacity-10 p-3 rounded">
+                  <i class="bi bi-box-seam fs-4 text-primary"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <h6 class="text-muted mb-2">Total Quantity</h6>
+                  <h3 class="fw-bold mb-0">${(summary.total_quantity || 0).toLocaleString()}</h3>
+                  <small class="text-muted">${summary.available_quantity || 0} available</small>
+                </div>
+                <div class="bg-success bg-opacity-10 p-3 rounded">
+                  <i class="bi bi-stack fs-4 text-success"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <h6 class="text-muted mb-2">Total Value</h6>
+                  <h3 class="fw-bold mb-0">₹${(summary.total_value || 0).toLocaleString('en-IN')}</h3>
+                  <small class="text-muted">At cost price</small>
+                </div>
+                <div class="bg-warning bg-opacity-10 p-3 rounded">
+                  <i class="bi bi-currency-rupee fs-4 text-warning"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <h6 class="text-muted mb-2">Low Stock Items</h6>
+                  <h3 class="fw-bold mb-0 text-danger">${summary.low_stock_count || 0}</h3>
+                  <small class="text-muted">Below reorder level</small>
+                </div>
+                <div class="bg-danger bg-opacity-10 p-3 rounded">
+                  <i class="bi bi-exclamation-triangle fs-4 text-danger"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <!-- Warehouse Summary -->
+        <div class="col-md-6">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light">
+              <h5 class="mb-0"><i class="bi bi-building me-2"></i>Warehouse Summary</h5>
+            </div>
+            <div class="card-body">
+              <div id="warehouse-summary-list">
+                <div class="text-center py-3">
+                  <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Channel Summary -->
+        <div class="col-md-6">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light">
+              <h5 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>Channel Summary</h5>
+            </div>
+            <div class="card-body">
+              <div id="channel-summary-list">
+                <div class="text-center py-3">
+                  <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4 mt-2">
+        <!-- Recent Activity -->
+        <div class="col-md-12">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+              <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Inventory Activity</h5>
+              <a href="#" onclick="switchInventoryTab('reports'); return false;" class="btn btn-sm btn-outline-primary">View All Reports</a>
+            </div>
+            <div class="card-body">
+              <div id="recent-activity-list">
+                <div class="text-center py-3">
+                  <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Load warehouse and channel summaries
+    loadWarehouseSummary();
+    loadChannelSummary();
+    loadRecentActivity();
+  } catch (error) {
+    console.error("Error loading inventory dashboard:", error);
+    container.innerHTML = `
+      <div class="alert alert-danger">
+        <h5><i class="bi bi-exclamation-triangle me-2"></i>Error Loading Dashboard</h5>
+        <p>${error.response?.data?.detail || error.message || "Failed to load inventory summary"}</p>
+      </div>
+    `;
+  }
+}
+
+// Load Warehouse Summary
+async function loadWarehouseSummary() {
+  try {
+    const token = localStorage.getItem("access_token");
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const res = await axios.get(
+      `${apiBase}/mango/inventory/warehouse-summary`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const warehouses = res.data.warehouses || [];
+
+    const container = document.getElementById("warehouse-summary-list");
+    if (!container) return;
+
+    if (warehouses.length === 0) {
+      container.innerHTML = '<p class="text-muted text-center mb-0">No warehouses found</p>';
+      return;
+    }
+
+    container.innerHTML = warehouses.map(wh => `
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <h6 class="mb-0">${wh.name}</h6>
+          <small class="text-muted">${wh.code || ''}</small>
+        </div>
+        <div class="text-end">
+          <div class="fw-bold">${(wh.total_quantity || 0).toLocaleString()}</div>
+          <small class="text-muted">items</small>
+        </div>
+      </div>
+    `).join('');
+  } catch (error) {
+    const container = document.getElementById("warehouse-summary-list");
+    if (container) {
+      container.innerHTML = '<p class="text-danger small mb-0">Failed to load warehouse data</p>';
+    }
+  }
+}
+
+// Load Channel Summary
+async function loadChannelSummary() {
+  try {
+    const token = localStorage.getItem("access_token");
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const res = await axios.get(
+      `${apiBase}/api/mango/channels`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const channels = res.data.channels || [];
+
+    const container = document.getElementById("channel-summary-list");
+    if (!container) return;
+
+    if (channels.length === 0) {
+      container.innerHTML = '<p class="text-muted text-center mb-0">No channels found</p>';
+      return;
+    }
+
+    container.innerHTML = channels.map(ch => `
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <h6 class="mb-0">${ch.channel_name}</h6>
+          <small class="text-muted">${ch.channel_type || ''}</small>
+        </div>
+        <div class="text-end">
+          <a href="#" onclick="switchInventoryTab('channel'); return false;" class="btn btn-sm btn-outline-primary">View</a>
+        </div>
+      </div>
+    `).join('');
+  } catch (error) {
+    const container = document.getElementById("channel-summary-list");
+    if (container) {
+      container.innerHTML = '<p class="text-danger small mb-0">Failed to load channel data</p>';
+    }
+  }
+}
+
+// Load Recent Activity
+async function loadRecentActivity() {
+  const container = document.getElementById("recent-activity-list");
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="text-muted text-center py-3">
+      <i class="bi bi-info-circle me-2"></i>Recent activity will be displayed here
+    </div>
+  `;
+}
+
+// Render Warehouse-Wise Inventory
+async function renderWarehouseWiseInventory(container) {
+  try {
+    const token = localStorage.getItem("access_token");
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const res = await axios.get(
+      `${apiBase}/mango/inventory/warehouse-summary`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const warehouses = res.data.warehouses || [];
+
+    container.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-building me-2"></i>Warehouse-Wise Inventory</h5>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-primary" onclick="exportWarehouseInventory()">
+              <i class="bi bi-download me-1"></i>Export
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          ${warehouses.length === 0 ? `
+            <div class="text-center py-5">
+              <i class="bi bi-building text-muted display-4 d-block mb-3"></i>
+              <h5 class="text-muted">No Warehouses Found</h5>
+              <p class="text-muted">Create warehouses to track inventory by location.</p>
+            </div>
+          ` : `
+            <div class="table-responsive">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>Warehouse</th>
+                    <th>Code</th>
+                    <th>Total Items</th>
+                    <th>Total Quantity</th>
+                    <th>Total Value</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${warehouses.map(wh => `
+                    <tr>
+                      <td><strong>${wh.name}</strong></td>
+                      <td><span class="badge bg-light text-dark">${wh.code || 'N/A'}</span></td>
+                      <td>${wh.item_count || 0}</td>
+                      <td>${(wh.total_quantity || 0).toLocaleString()}</td>
+                      <td>₹${(wh.total_value || 0).toLocaleString('en-IN')}</td>
+                      <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewWarehouseDetails(${wh.id})">
+                          <i class="bi bi-eye me-1"></i>View Details
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  } catch (error) {
+    container.innerHTML = `
+      <div class="alert alert-danger">
+        <h5><i class="bi bi-exclamation-triangle me-2"></i>Error Loading Warehouse Inventory</h5>
+        <p>${error.response?.data?.detail || error.message || "Failed to load warehouse inventory"}</p>
+      </div>
+    `;
+  }
+}
+
+// Render Channel-Wise Inventory
+async function renderChannelWiseInventory(container) {
+  try {
+    const token = localStorage.getItem("access_token");
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const channelsRes = await axios.get(
+      `${apiBase}/api/mango/channels`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const channels = channelsRes.data.channels || [];
+
+    container.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>Channel-Wise Inventory</h5>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-primary" onclick="exportChannelInventory()">
+              <i class="bi bi-download me-1"></i>Export
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          ${channels.length === 0 ? `
+            <div class="text-center py-5">
+              <i class="bi bi-diagram-3 text-muted display-4 d-block mb-3"></i>
+              <h5 class="text-muted">No Channels Found</h5>
+              <p class="text-muted">Create channels to track inventory by sales channel.</p>
+              <a href="#" onclick="loadSection('channel_settings'); return false;" class="btn btn-primary">
+                <i class="bi bi-plus me-1"></i>Create Channel
+              </a>
+            </div>
+          ` : `
+            <div class="row g-3">
+              ${channels.map(ch => `
+                <div class="col-md-6">
+                  <div class="card border h-100">
+                    <div class="card-body">
+                      <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                          <h6 class="fw-bold mb-1">${ch.channel_name}</h6>
+                          <span class="badge bg-secondary">${ch.channel_type || 'custom'}</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewChannelInventory(${ch.id})">
+                          <i class="bi bi-eye me-1"></i>View
+                        </button>
+                      </div>
+                      <div class="row g-2 mt-2">
+                        <div class="col-6">
+                          <small class="text-muted d-block">Orders</small>
+                          <strong id="channel-${ch.id}-orders">-</strong>
+                        </div>
+                        <div class="col-6">
+                          <small class="text-muted d-block">Items</small>
+                          <strong id="channel-${ch.id}-items">-</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+
+    // Load channel statistics
+    channels.forEach(ch => loadChannelStats(ch.id));
+  } catch (error) {
+    container.innerHTML = `
+      <div class="alert alert-danger">
+        <h5><i class="bi bi-exclamation-triangle me-2"></i>Error Loading Channel Inventory</h5>
+        <p>${error.response?.data?.detail || error.message || "Failed to load channel inventory"}</p>
+      </div>
+    `;
+  }
+}
+
+// Load Channel Statistics
+async function loadChannelStats(channelId) {
+  try {
+    const token = localStorage.getItem("access_token");
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const res = await axios.get(
+      `${apiBase}/api/mango/channels/${channelId}/stats`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const stats = res.data;
+
+    const ordersEl = document.getElementById(`channel-${channelId}-orders`);
+    const itemsEl = document.getElementById(`channel-${channelId}-items`);
+    
+    if (ordersEl) {
+      ordersEl.textContent = stats.total_orders || 0;
+    }
+    if (itemsEl) {
+      itemsEl.textContent = stats.total_items || 0;
+    }
+  } catch (error) {
+    // Silently fail - element might not exist if user navigated away
+    console.debug(`Error loading stats for channel ${channelId}:`, error);
+  }
+}
+
+// Render Inventory Aging
+async function renderInventoryAging(container) {
+  try {
+    const token = localStorage.getItem("access_token");
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const res = await axios.get(
+      `${apiBase}/mango/inventory/aging`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const agingData = res.data;
+
+    container.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Inventory Aging Analysis</h5>
+          <div class="d-flex gap-2">
+            <input type="date" id="aging-date-filter" class="form-control form-control-sm" 
+                   value="${new Date().toISOString().split('T')[0]}" 
+                   onchange="loadInventoryAging()">
+            <button class="btn btn-sm btn-outline-primary" onclick="exportAgingReport()">
+              <i class="bi bi-download me-1"></i>Export
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="row g-3 mb-4">
+            <div class="col-md-3">
+              <div class="card bg-light">
+                <div class="card-body text-center">
+                  <h6 class="text-muted mb-1">0-30 Days</h6>
+                  <h4 class="fw-bold text-success">${(agingData.aging_0_30 || 0).toLocaleString()}</h4>
+                  <small class="text-muted">items</small>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="card bg-light">
+                <div class="card-body text-center">
+                  <h6 class="text-muted mb-1">31-60 Days</h6>
+                  <h4 class="fw-bold text-warning">${(agingData.aging_31_60 || 0).toLocaleString()}</h4>
+                  <small class="text-muted">items</small>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="card bg-light">
+                <div class="card-body text-center">
+                  <h6 class="text-muted mb-1">61-90 Days</h6>
+                  <h4 class="fw-bold text-orange">${(agingData.aging_61_90 || 0).toLocaleString()}</h4>
+                  <small class="text-muted">items</small>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="card bg-light">
+                <div class="card-body text-center">
+                  <h6 class="text-muted mb-1">90+ Days</h6>
+                  <h4 class="fw-bold text-danger">${(agingData.aging_90_plus || 0).toLocaleString()}</h4>
+                  <small class="text-muted">items</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Item Name</th>
+                  <th>SKU</th>
+                  <th>Warehouse</th>
+                  <th>Quantity</th>
+                  <th>Last Movement</th>
+                  <th>Age (Days)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="aging-items-list">
+                <tr>
+                  <td colspan="7" class="text-center py-4">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Load aging items
+    loadAgingItems();
+  } catch (error) {
+    container.innerHTML = `
+      <div class="alert alert-danger">
+        <h5><i class="bi bi-exclamation-triangle me-2"></i>Error Loading Inventory Aging</h5>
+        <p>${error.response?.data?.detail || error.message || "Failed to load aging data"}</p>
+      </div>
+    `;
+  }
+}
+
+// Load Aging Items
+async function loadAgingItems() {
+  try {
+    const token = localStorage.getItem("access_token");
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const dateFilter = document.getElementById("aging-date-filter")?.value || new Date().toISOString().split('T')[0];
+    
+    const res = await axios.get(
+      `${apiBase}/mango/inventory/aging/items?as_of_date=${dateFilter}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const items = res.data.items || [];
+
+    const container = document.getElementById("aging-items-list");
+    if (!container) return;
+
+    if (items.length === 0) {
+      container.innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center py-4 text-muted">No aging items found</td>
+        </tr>
+      `;
+      return;
+    }
+
+    container.innerHTML = items.map(item => {
+      const ageClass = item.age_days <= 30 ? 'text-success' : 
+                      item.age_days <= 60 ? 'text-warning' : 
+                      item.age_days <= 90 ? 'text-orange' : 'text-danger';
+      const statusBadge = item.age_days <= 30 ? 'bg-success' : 
+                         item.age_days <= 60 ? 'bg-warning' : 
+                         item.age_days <= 90 ? 'bg-orange' : 'bg-danger';
+      
+      return `
+        <tr>
+          <td><strong>${item.item_name || 'N/A'}</strong></td>
+          <td><span class="badge bg-light text-dark">${item.sku || 'N/A'}</span></td>
+          <td>${item.warehouse_name || 'N/A'}</td>
+          <td>${(item.quantity || 0).toLocaleString()}</td>
+          <td>${item.last_movement_date ? new Date(item.last_movement_date).toLocaleDateString() : 'N/A'}</td>
+          <td><span class="fw-bold ${ageClass}">${item.age_days || 0}</span></td>
+          <td><span class="badge ${statusBadge}">${item.age_category || 'N/A'}</span></td>
+        </tr>
+      `;
+    }).join('');
+  } catch (error) {
+    const container = document.getElementById("aging-items-list");
+    if (container) {
+      container.innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center py-4 text-danger">Failed to load aging items</td>
+        </tr>
+      `;
+    }
+  }
+}
+
+// Reload Inventory Aging
+window.loadInventoryAging = function() {
+  loadAgingItems();
+};
+
+// Render Inventory Reports
+async function renderInventoryReports(container) {
+  container.innerHTML = `
+    <div class="row g-4">
+      <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body text-center p-4">
+            <i class="bi bi-file-earmark-bar-graph display-4 text-primary mb-3"></i>
+            <h5 class="fw-bold">Stock Report</h5>
+            <p class="text-muted small">Current stock levels across all warehouses</p>
+            <button class="btn btn-primary" onclick="generateStockReport()">
+              <i class="bi bi-download me-1"></i>Generate Report
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body text-center p-4">
+            <i class="bi bi-clock-history display-4 text-warning mb-3"></i>
+            <h5 class="fw-bold">Aging Report</h5>
+            <p class="text-muted small">Inventory aging analysis by date</p>
+            <button class="btn btn-warning" onclick="generateAgingReport()">
+              <i class="bi bi-download me-1"></i>Generate Report
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body text-center p-4">
+            <i class="bi bi-exclamation-triangle display-4 text-danger mb-3"></i>
+            <h5 class="fw-bold">Low Stock Report</h5>
+            <p class="text-muted small">Items below reorder level</p>
+            <button class="btn btn-danger" onclick="generateLowStockReport()">
+              <i class="bi bi-download me-1"></i>Generate Report
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body text-center p-4">
+            <i class="bi bi-building display-4 text-info mb-3"></i>
+            <h5 class="fw-bold">Warehouse Report</h5>
+            <p class="text-muted small">Inventory breakdown by warehouse</p>
+            <button class="btn btn-info" onclick="generateWarehouseReport()">
+              <i class="bi bi-download me-1"></i>Generate Report
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body text-center p-4">
+            <i class="bi bi-diagram-3 display-4 text-success mb-3"></i>
+            <h5 class="fw-bold">Channel Report</h5>
+            <p class="text-muted small">Inventory and orders by channel</p>
+            <button class="btn btn-success" onclick="generateChannelReport()">
+              <i class="bi bi-download me-1"></i>Generate Report
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body text-center p-4">
+            <i class="bi bi-currency-rupee display-4 text-secondary mb-3"></i>
+            <h5 class="fw-bold">Valuation Report</h5>
+            <p class="text-muted small">Inventory value at cost and selling price</p>
+            <button class="btn btn-secondary" onclick="generateValuationReport()">
+              <i class="bi bi-download me-1"></i>Generate Report
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Report Generation Functions
+window.generateStockReport = async function() {
+  Swal.fire({
+    icon: "info",
+    title: "Stock Report",
+    text: "Report generation will be implemented soon!",
+  });
+};
+
+window.generateAgingReport = async function() {
+  Swal.fire({
+    icon: "info",
+    title: "Aging Report",
+    text: "Report generation will be implemented soon!",
+  });
+};
+
+window.generateLowStockReport = async function() {
+  Swal.fire({
+    icon: "info",
+    title: "Low Stock Report",
+    text: "Report generation will be implemented soon!",
+  });
+};
+
+window.generateWarehouseReport = async function() {
+  Swal.fire({
+    icon: "info",
+    title: "Warehouse Report",
+    text: "Report generation will be implemented soon!",
+  });
+};
+
+window.generateChannelReport = async function() {
+  Swal.fire({
+    icon: "info",
+    title: "Channel Report",
+    text: "Report generation will be implemented soon!",
+  });
+};
+
+window.generateValuationReport = async function() {
+  Swal.fire({
+    icon: "info",
+    title: "Valuation Report",
+    text: "Report generation will be implemented soon!",
+  });
+};
+
+window.viewWarehouseDetails = function(warehouseId) {
+  Swal.fire({
+    icon: "info",
+    title: "Warehouse Details",
+    text: `Viewing details for warehouse ID: ${warehouseId}`,
+  });
+};
+
+window.viewChannelInventory = function(channelId) {
+  Swal.fire({
+    icon: "info",
+    title: "Channel Inventory",
+    text: `Viewing inventory for channel ID: ${channelId}`,
+  });
+};
+
+window.exportWarehouseInventory = function() {
+  Swal.fire({
+    icon: "info",
+    title: "Export Warehouse Inventory",
+    text: "Export functionality will be implemented soon!",
+  });
+};
+
+window.exportChannelInventory = function() {
+  Swal.fire({
+    icon: "info",
+    title: "Export Channel Inventory",
+    text: "Export functionality will be implemented soon!",
+  });
+};
+
+window.exportAgingReport = function() {
+  Swal.fire({
+    icon: "info",
+    title: "Export Aging Report",
+    text: "Export functionality will be implemented soon!",
+  });
+};
 
 // --- Dynamic Product List ---
 async function renderProductList(container) {
@@ -5201,7 +6042,7 @@ function renderCustomPage(container, pageId) {
   const page = designState.customPages.find(p => p.id === pageId);
   
   if (!page) {
-    container.innerHTML = `
+  container.innerHTML = `
       <div class="text-center py-5">
         <i class="bi bi-file-x fs-1 text-muted"></i>
         <h4 class="mt-3">Page Not Found</h4>
@@ -5258,11 +6099,11 @@ function renderCustomPageWidget(widget) {
             <i class="bi ${widgetDef?.icon || 'bi-square'} text-primary"></i>
             <h6 class="mb-0 fw-bold">${widget.title || widgetDef?.name || 'Widget'}</h6>
           </div>
-        </div>
-        <div class="card-body">
+      </div>
+      <div class="card-body">
           <div class="widget-content" id="widget-content-${widget.id}" data-widget-type="${widget.type}">
             ${getWidgetContent(widget)}
-          </div>
+        </div>
         </div>
       </div>
     </div>
@@ -5273,11 +6114,11 @@ function getWidgetContent(widget) {
   switch (widget.type) {
     case 'kpi_card':
       return `
-        <div class="text-center py-4">
+          <div class="text-center py-4">
           <div class="display-4 fw-bold text-primary">₹1.2L</div>
           <div class="text-muted">Total Value</div>
           <div class="mt-2 text-success small"><i class="bi bi-arrow-up"></i> +12% vs last period</div>
-        </div>
+            </div>
       `;
     case 'line_chart':
     case 'bar_chart':
@@ -5296,7 +6137,7 @@ function getWidgetContent(widget) {
               <tr><td>Sample Item 3</td><td class="text-end">₹800</td></tr>
             </tbody>
           </table>
-        </div>
+          </div>
       `;
     case 'recent_orders':
       return `
@@ -5304,13 +6145,13 @@ function getWidgetContent(widget) {
           <div class="list-group-item d-flex justify-content-between align-items-center px-0">
             <div><strong>#ORD-001</strong><br><small class="text-muted">Amazon</small></div>
             <span class="badge bg-success">Delivered</span>
-          </div>
+        </div>
           <div class="list-group-item d-flex justify-content-between align-items-center px-0">
             <div><strong>#ORD-002</strong><br><small class="text-muted">Flipkart</small></div>
             <span class="badge bg-warning">Processing</span>
-          </div>
-        </div>
-      `;
+      </div>
+    </div>
+  `;
     case 'trend_indicator':
       return `
         <div class="d-flex align-items-center justify-content-center py-4">
@@ -5396,103 +6237,162 @@ let settingsState = {
 function renderSettingsModule(container, subSection = null) {
   if (!container) container = document.getElementById("dynamic-content");
 
-  // Render OMS Integration Configuration
-  container.innerHTML = `
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-light">
-        <h5 class="mb-0"><i class="bi bi-cloud-arrow-up me-2"></i>OMS Integration Configuration</h5>
-      </div>
-      <div class="card-body">
-        <!-- Info Section -->
-        <div class="alert alert-info mb-4">
-          <h6 class="alert-heading"><i class="bi bi-info-circle me-2"></i>Hybrid Order Management</h6>
-          <p class="mb-2">Toggle between two modes for each platform:</p>
-          <ul class="mb-2">
-            <li><strong>OMS Sync OFF (Default)</strong>: Use Excel uploads with custom fields (Mango System)</li>
-            <li><strong>OMS Sync ON</strong>: Live integration with main OMS platform for real-time orders</li>
-          </ul>
-          <small class="text-muted">You can enable different modes for different platforms!</small>
-        </div>
+  // If subSection is provided, render specific settings page
+  if (subSection) {
+    settingsState.view = subSection;
+    renderSettingsSubModule(container);
+    return;
+  }
 
-        <!-- Platform Toggles -->
-        <div id="oms-config-container-main">
-          <div class="text-center py-4">
-            <div class="spinner-border text-primary" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <p class="mt-2 text-muted">Loading OMS configuration...</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-
-  // Load OMS config
-  loadOMSConfigMain();
+  // Otherwise, render the settings dashboard
+  renderSettingsDashboard(container);
 }
 
 function renderSettingsDashboard(container) {
   container.innerHTML = `
         <div class="container-fluid p-4 fade-in">
-            <h3 class="fw-bold mb-4">Settings</h3>
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h2 class="fw-bold mb-1">
+            <i class="bi bi-gear me-2"></i>Mango Settings
+          </h2>
+          <p class="text-muted mb-0">Configure your Mango application settings here.</p>
+        </div>
+      </div>
             
             <div class="row g-4">
                 <!-- Organization Settings -->
-                <div class="col-md-4">
+        <div class="col-md-6 col-lg-4">
                     <div class="card border-0 shadow-sm h-100">
                         <div class="card-body p-4">
                             <div class="d-flex align-items-center mb-3 text-primary">
-                                <i class="bi bi-building fs-4 me-2"></i>
+                <i class="bi bi-building fs-3 me-2"></i>
                                 <h5 class="fw-bold mb-0">Organization</h5>
                             </div>
+              <p class="text-muted small mb-3">Manage company profile and organizational settings</p>
                             <div class="list-group list-group-flush">
-                                <a href="#" class="list-group-item list-group-item-action text-muted border-0 ps-0" onclick="navigateToSettings('general')">Profile & Branding</a>
-                                <a href="#" class="list-group-item list-group-item-action text-muted border-0 ps-0" onclick="navigateToSettings('users')">Users & Roles</a>
-                                <a href="#" class="list-group-item list-group-item-action text-muted border-0 ps-0" onclick="navigateToSettings('warehouses')">Warehouses & Locations</a>
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('general')">
+                  <i class="bi bi-person-badge me-2 text-primary"></i>Profile & Branding
+                </a>
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('warehouses')">
+                  <i class="bi bi-geo-alt me-2 text-primary"></i>Warehouses & Locations
+                </a>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Inventory & Items -->
-                <div class="col-md-4">
+        <!-- Inventory & Products -->
+        <div class="col-md-6 col-lg-4">
                     <div class="card border-0 shadow-sm h-100">
                          <div class="card-body p-4">
                             <div class="d-flex align-items-center mb-3 text-success">
-                                <i class="bi bi-box-seam fs-4 me-2"></i>
+                <i class="bi bi-box-seam fs-3 me-2"></i>
                                 <h5 class="fw-bold mb-0">Inventory</h5>
                             </div>
+              <p class="text-muted small mb-3">Configure inventory and product settings</p>
                             <div class="list-group list-group-flush">
-                                <a href="#" class="list-group-item list-group-item-action text-muted border-0 ps-0" onclick="navigateToSettings('items')">Items</a>
-                                <a href="#" class="list-group-item list-group-item-action text-muted border-0 ps-0" onclick="navigateToSettings('vendors')">Vendors</a>
-                                <a href="#" class="list-group-item list-group-item-action text-muted border-0 ps-0" onclick="navigateToSettings('taxes')">Taxes & Compliance</a>
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('vendors')">
+                  <i class="bi bi-truck me-2 text-success"></i>Vendors
+                </a>
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('taxes')">
+                  <i class="bi bi-receipt me-2 text-success"></i>Taxes & Compliance
+                </a>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- System & Preferences -->
-                <div class="col-md-4">
+        <!-- Channels & Integration -->
+        <div class="col-md-6 col-lg-4">
                     <div class="card border-0 shadow-sm h-100">
                          <div class="card-body p-4">
                              <div class="d-flex align-items-center mb-3 text-info">
-                                <i class="bi bi-gear fs-4 me-2"></i>
+                <i class="bi bi-diagram-3 fs-3 me-2"></i>
+                <h5 class="fw-bold mb-0">Channels</h5>
+              </div>
+              <p class="text-muted small mb-3">Manage sales channels and integrations</p>
+              <div class="list-group list-group-flush">
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="loadSection('channel_settings')">
+                  <i class="bi bi-sliders me-2 text-info"></i>Channel Configuration
+                </a>
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('oms-integration')">
+                  <i class="bi bi-cloud-arrow-up me-2 text-info"></i>OMS Integration
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- System & Preferences -->
+        <div class="col-md-6 col-lg-4">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4">
+              <div class="d-flex align-items-center mb-3 text-warning">
+                <i class="bi bi-gear fs-3 me-2"></i>
                                 <h5 class="fw-bold mb-0">System</h5>
                             </div>
+              <p class="text-muted small mb-3">System preferences and configurations</p>
                              <div class="list-group list-group-flush">
-                                <a href="#" class="list-group-item list-group-item-action text-muted border-0 ps-0" onclick="navigateToSettings('general')">Preferences</a>
-                                <a href="#" class="list-group-item list-group-item-action text-muted border-0 ps-0" onclick="navigateToSettings('notifications')">Notifications</a>
-                                <a href="#" class="list-group-item list-group-item-action text-muted border-0 ps-0" onclick="navigateToSettings('integrations')">Integrations</a>
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('preferences')">
+                  <i class="bi bi-sliders me-2 text-warning"></i>Preferences
+                </a>
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('notifications')">
+                  <i class="bi bi-bell me-2 text-warning"></i>Notifications
+                </a>
                             </div>
                         </div>
                     </div>
                 </div>
+
+        <!-- Users & Access -->
+        <div class="col-md-6 col-lg-4">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4">
+              <div class="d-flex align-items-center mb-3 text-danger">
+                <i class="bi bi-people fs-3 me-2"></i>
+                <h5 class="fw-bold mb-0">Users & Access</h5>
+              </div>
+              <p class="text-muted small mb-3">Manage users, roles, and permissions</p>
+              <div class="list-group list-group-flush">
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('users')">
+                  <i class="bi bi-person-check me-2 text-danger"></i>Users & Roles
+                </a>
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('permissions')">
+                  <i class="bi bi-shield-lock me-2 text-danger"></i>Permissions
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Data & Reports -->
+        <div class="col-md-6 col-lg-4">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-4">
+              <div class="d-flex align-items-center mb-3 text-secondary">
+                <i class="bi bi-database fs-3 me-2"></i>
+                <h5 class="fw-bold mb-0">Data & Reports</h5>
+              </div>
+              <p class="text-muted small mb-3">Data management and reporting settings</p>
+              <div class="list-group list-group-flush">
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('backup')">
+                  <i class="bi bi-cloud-upload me-2 text-secondary"></i>Backup & Export
+                </a>
+                <a href="#" class="list-group-item list-group-item-action border-0 ps-0 py-2" onclick="navigateToSettings('reports')">
+                  <i class="bi bi-file-earmark-bar-graph me-2 text-secondary"></i>Report Settings
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
             </div>
         </div>
     `;
 }
 
 function navigateToSettings(view) {
+  settingsState.view = view;
   loadSection(`settings/${view}`);
 }
 
@@ -7950,5 +8850,238 @@ async function toggleOMSSyncMain(platform, enable) {
       title: "Toggle Failed",
       text: error.response?.data?.detail || "Failed to toggle OMS sync",
     });
+  }
+}
+
+// OMS Integration Settings
+function renderOMSIntegrationSettings(container) {
+  container.innerHTML = `
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="bi bi-cloud-arrow-up me-2"></i>OMS Integration Configuration</h5>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info mb-4">
+          <h6 class="alert-heading"><i class="bi bi-info-circle me-2"></i>Hybrid Order Management</h6>
+          <p class="mb-2">Toggle between two modes for each platform:</p>
+          <ul class="mb-2">
+            <li><strong>OMS Sync OFF (Default)</strong>: Use Excel uploads with custom fields (Mango System)</li>
+            <li><strong>OMS Sync ON</strong>: Live integration with main OMS platform for real-time orders</li>
+          </ul>
+          <small class="text-muted">You can enable different modes for different platforms!</small>
+        </div>
+        <div id="oms-config-container-main">
+          <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading OMS configuration...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  loadOMSConfigMain();
+}
+
+// Additional Settings Functions
+function renderUsersSettings(container) {
+  container.innerHTML = `
+    <div class="alert alert-info">
+      <h5><i class="bi bi-people me-2"></i>Users & Roles Management</h5>
+      <p>User management is available through the main Javelin Portal. Please use the admin panel to manage users and roles.</p>
+      <a href="/admin" class="btn btn-primary btn-sm mt-2" target="_blank">Open Admin Panel</a>
+    </div>
+  `;
+}
+
+function renderPreferencesSettings(container) {
+  container.innerHTML = `
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="bi bi-sliders me-2"></i>Application Preferences</h5>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info">
+          <p class="mb-0">Most preferences are managed through Organization Profile settings. <a href="#" onclick="navigateToSettings('general')">Go to Profile & Branding</a></p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderNotificationsSettings(container) {
+  container.innerHTML = `
+    <div class="alert alert-info">
+      <h5><i class="bi bi-bell me-2"></i>Notification Settings</h5>
+      <p>Notification preferences will be available in a future update.</p>
+    </div>
+  `;
+}
+
+function renderPermissionsSettings(container) {
+  container.innerHTML = `
+    <div class="alert alert-info">
+      <h5><i class="bi bi-shield-lock me-2"></i>Permissions Management</h5>
+      <p>Permission management is available through the main Javelin Portal. Please use the admin panel to manage permissions.</p>
+      <a href="/admin" class="btn btn-primary btn-sm mt-2" target="_blank">Open Admin Panel</a>
+    </div>
+  `;
+}
+
+function renderBackupSettings(container) {
+  container.innerHTML = `
+    <div class="alert alert-info">
+      <h5><i class="bi bi-cloud-upload me-2"></i>Backup & Export</h5>
+      <p>Data backup and export features will be available in a future update.</p>
+    </div>
+  `;
+}
+
+function renderReportsSettings(container) {
+  container.innerHTML = `
+    <div class="alert alert-info">
+      <h5><i class="bi bi-file-earmark-bar-graph me-2"></i>Report Settings</h5>
+      <p>Report configuration settings will be available in a future update.</p>
+    </div>
+  `;
+}
+
+function renderTaxSettings(container) {
+  container.innerHTML = `
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="bi bi-receipt me-2"></i>Taxes & Compliance</h5>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info">
+          <p class="mb-0">Tax settings are configured at the product level. Manage tax rates in the <a href="#" onclick="loadSection('inventory')">Inventory</a> section when creating or editing products.</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Toggle OMS Sync
+async function toggleOMSSync(platform, checkbox) {
+  const originalState = checkbox.checked;
+  const syncEnabled = checkbox.checked;
+  
+  try {
+    const token = localStorage.getItem("access_token");
+    await axios.post(
+      `${API_BASE_URL}/api/mango/oms-config/toggle`,
+      { platform, sync_enabled: syncEnabled },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    Swal.fire({
+      icon: "success",
+      title: "Configuration Updated",
+      text: `${platform.charAt(0).toUpperCase() + platform.slice(1)} OMS sync ${syncEnabled ? "enabled" : "disabled"}`,
+      timer: 2000,
+      showConfirmButton: false
+    });
+    
+    // Reload config to update UI
+    loadOMSConfigMain();
+  } catch (error) {
+    // Revert checkbox on error
+    checkbox.checked = originalState;
+    
+    Swal.fire({
+      icon: "error",
+      title: "Toggle Failed",
+      text: error.response?.data?.detail || "Failed to toggle OMS sync",
+    });
+  }
+}
+
+// Load OMS Config Main
+async function loadOMSConfigMain() {
+  try {
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/oms-config`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    const configs = response.data.configs || [];
+    const container = document.getElementById("oms-config-container-main");
+    
+    if (!container) return;
+    
+    if (configs.length === 0) {
+      container.innerHTML = `
+        <div class="alert alert-warning">
+          <p class="mb-0">No platform configurations found.</p>
+        </div>
+      `;
+      return;
+    }
+    
+    const platformIcons = {
+      amazon: "bi-shop",
+      flipkart: "bi-bag",
+      meesho: "bi-box",
+      myntra: "bi-shop",
+      shopify: "bi-cart3",
+    };
+    
+    const platformColors = {
+      amazon: "warning",
+      flipkart: "primary",
+      meesho: "danger",
+      myntra: "info",
+      shopify: "success",
+    };
+    
+    container.innerHTML = configs.map((config) => `
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="row align-items-center">
+            <div class="col-md-3">
+              <h6 class="mb-0">
+                <i class="bi ${platformIcons[config.platform] || "bi-shop"} me-2 text-${platformColors[config.platform]}"></i>
+                ${config.platform.charAt(0).toUpperCase() + config.platform.slice(1)}
+              </h6>
+            </div>
+            <div class="col-md-4">
+              <div class="d-flex align-items-center">
+                <span class="badge ${config.sync_enabled ? "bg-success" : "bg-secondary"} me-2">
+                  ${config.sync_enabled ? "🟢 OMS Sync ON" : "🔴 OMS Sync OFF"}
+                </span>
+                <small class="text-muted">
+                  ${config.sync_enabled ? "Using live OMS data" : "Using Excel uploads"}
+                </small>
+              </div>
+            </div>
+            <div class="col-md-3">
+              ${config.last_sync_at ? `
+                <small class="text-muted">
+                  Last sync: ${new Date(config.last_sync_at).toLocaleString()}
+                </small>
+              ` : '<small class="text-muted">Never synced</small>'}
+            </div>
+            <div class="col-md-2 text-end">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" 
+                       ${config.sync_enabled ? "checked" : ""}
+                       onchange="toggleOMSSync('${config.platform}', this)">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  } catch (error) {
+    const container = document.getElementById("oms-config-container-main");
+    if (container) {
+      container.innerHTML = `
+        <div class="alert alert-danger">
+          <p class="mb-0">Failed to load OMS configuration: ${error.message}</p>
+        </div>
+      `;
+    }
   }
 }

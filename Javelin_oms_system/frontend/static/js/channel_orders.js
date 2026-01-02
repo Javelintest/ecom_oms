@@ -71,6 +71,9 @@ function renderChannelOrders(container) {
 
   // Initialize
   loadPlatformList();
+  
+  // Populate channels after DOM is rendered
+  setTimeout(() => populateChannelSelector(), 200);
 }
 
 /**
@@ -88,17 +91,14 @@ function renderImportPanel() {
           <div class="card-body">
             <!-- Platform Selection -->
             <div class="mb-3">
-              <label class="form-label fw-bold">Select Platform</label>
+              <label class="form-label fw-bold">Select Channel</label>
               <select class="form-select" id="platform-select" onchange="handlePlatformChange()">
-                <option value="">-- Choose Platform --</option>
-                <option value="amazon">🛒 Amazon</option>
-                <option value="flipkart">🛍️ Flipkart</option>
-                <option value="meesho">📦 Meesho</option>
-                <option value="myntra">👗 Myntra</option>
-                <option value="shopify">🛒 Shopify</option>
-                <option value="custom">⚙️ Custom CSV</option>
+                <option value="">-- Choose Channel --</option>
+                <optgroup label="Channels" id="custom-channels-group">
+                  <option value="" disabled>Loading channels...</option>
+                </optgroup>
               </select>
-              <small class="text-muted">Choose the platform you're importing from</small>
+              <small class="text-muted">Select a channel to import orders. Create channels in Channel Settings.</small>
             </div>
 
             <!-- File Upload -->
@@ -407,16 +407,63 @@ function renderOrderListPanel() {
 }
 
 /**
+ * Populate channel selector with custom channels from API
+ */
+async function populateChannelSelector() {
+  try {
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(
+      `${API_BASE_URL}/api/mango/channels`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    const channels = response.data.channels || [];
+    const customGroup = document.getElementById("custom-channels-group");
+    const selector = document.getElementById("platform-select");
+    
+    if (customGroup && selector) {
+      if (channels.length === 0) {
+        customGroup.innerHTML = '<option value="" disabled>No channels found. Create a channel in Channel Settings.</option>';
+        // Disable upload button if no channels
+        const uploadBtn = document.getElementById("upload-btn");
+        if (uploadBtn) {
+          uploadBtn.disabled = true;
+        }
+      } else {
+        const iconMap = {
+          marketplace: "🛒",
+          website: "🌐",
+          pos: "💳",
+          api: "🔌",
+          custom: "🔧"
+        };
+        
+        customGroup.innerHTML = channels.map(channel => {
+          const icon = iconMap[channel.channel_type] || "🔧";
+          return `<option value="channel_${channel.id}">${icon} ${channel.channel_name}</option>`;
+        }).join('');
+      }
+    }
+  } catch (error) {
+    console.error("Failed to load channels:", error);
+    const customGroup = document.getElementById("custom-channels-group");
+    if (customGroup) {
+      customGroup.innerHTML = '<option value="" disabled>Error loading channels. Please refresh the page.</option>';
+    }
+  }
+}
+
+/**
  * Handle platform change
  */
 function handlePlatformChange() {
   const platform = document.getElementById("platform-select").value;
   channelOrderState.selectedPlatform = platform;
 
-  if (platform) {
-    showPlatformHelp(platform);
-  } else {
-    document.getElementById("platform-help").style.display = "none";
+  // Hide platform help (only custom channels now)
+  const helpCard = document.getElementById("platform-help");
+  if (helpCard) {
+    helpCard.style.display = "none";
   }
 
   updateUploadButton();
@@ -1230,10 +1277,10 @@ async function saveChannelSettings() {
  * Upload and import orders
  */
 async function uploadAndImportOrders() {
-  const platform = document.getElementById("platform-select").value;
+  const platformValue = document.getElementById("platform-select").value;
   const fileInput = document.getElementById("file-input");
 
-  if (!platform) {
+  if (!platformValue) {
     Swal.fire({
       icon: "warning",
       title: "Select Platform",
@@ -1264,8 +1311,22 @@ async function uploadAndImportOrders() {
     const formData = new FormData();
     formData.append("file", file);
 
+    // All selections are now custom channels
+    if (!platformValue.startsWith("channel_")) {
+      Swal.fire({
+        icon: "error",
+        title: "Invalid Selection",
+        text: "Please select a valid channel",
+      });
+      return;
+    }
+    
+    // Extract channel ID
+    const channelId = platformValue.replace("channel_", "");
+    const apiUrl = `${API_BASE_URL}/api/mango/channels/${channelId}/import-orders`;
+
     const response = await axios.post(
-      `${API_BASE_URL}/api/mango/channels/import-orders?platform=${platform}`,
+      apiUrl,
       formData,
       {
         headers: {

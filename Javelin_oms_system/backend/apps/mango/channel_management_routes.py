@@ -17,7 +17,7 @@ import pandas as pd
 from ..common.db import get_db
 from ..common.models import User, Company
 from ..common.dependencies import get_current_user
-from .channel_master_models import Channel, ChannelFieldMapping, ChannelTableSchema
+from .channel_master_models import Channel, ChannelFieldMapping, ChannelTableSchema, ChannelTable
 
 
 # ============ Request/Response Models ============
@@ -410,6 +410,42 @@ async def list_channels(
     channels = query.order_by(Channel.created_at.desc()).all()
     
     return channels
+
+
+@router.get("", response_model=dict)
+async def get_channels(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all channels for the current user's company (frontend-friendly format)"""
+    
+    if not current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be associated with a company"
+        )
+    
+    query = db.query(Channel).filter(Channel.company_id == current_user.company_id)
+    
+    if not include_inactive:
+        query = query.filter(Channel.is_active == True)
+    
+    channels = query.order_by(Channel.created_at.desc()).all()
+    
+    # Return in format expected by frontend
+    return {
+        "channels": [
+            {
+                "id": ch.id,
+                "channel_name": ch.channel_name,
+                "channel_type": ch.channel_type,
+                "is_active": ch.is_active,
+                "created_at": ch.created_at.isoformat() if ch.created_at else None
+            }
+            for ch in channels
+        ]
+    }
 
 
 @router.get("/foreign-key-tables")
@@ -849,10 +885,10 @@ async def create_channel_field(
         inspector = inspect(db.bind)
         existing_columns = [col['name'].lower() for col in inspector.get_columns(default_table.table_name)]
         if field_key.lower() in existing_columns:
-        raise HTTPException(
+            raise HTTPException(
                 status_code=409,
                 detail=f"Column '{field_key}' already exists in the database table '{default_table.table_name}'"
-        )
+            )
     except Exception as e:
         if "already exists" in str(e).lower():
             raise HTTPException(status_code=409, detail=f"Column '{field_key}' already exists")
@@ -894,7 +930,7 @@ async def create_channel_field(
         if is_indexed and not is_primary_key:
             try:
                 index_sql = f"CREATE INDEX IF NOT EXISTS idx_{default_table.table_name}_{field_key} ON {default_table.table_name} ({field_key})"
-            db.execute(text(index_sql))
+                db.execute(text(index_sql))
             except Exception:
                 pass
         
@@ -1326,49 +1362,49 @@ async def infer_schema_from_file(
 ):
     """Infer fields from CSV or Excel file headers"""
     try:
-    headers = []
-    sample_data = None
-    
-    if file.filename.endswith('.csv'):
-        content = await file.read()
-        decoded = content.decode('utf-8')
-        try:
-            f = io.StringIO(decoded)
-            reader = csv.reader(f)
-            headers = next(reader)
-            try:
-                sample_data = next(reader)
-            except StopIteration:
-                pass
-        except Exception as e:
-             raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
-             
-    elif file.filename.endswith(('.xlsx', '.xls')):
-        try:
-            contents = await file.read()
-            df = pd.read_excel(io.BytesIO(contents), nrows=5)
-            headers = df.columns.tolist()
-            if not df.empty:
-                sample_data = df.iloc[0].tolist()
-                # Convert numpy types to native python types for JSON serialization
-                sample_data = [
-                    x.item() if hasattr(x, 'item') else x 
-                    for x in sample_data
-                ]
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to parse Excel file: {str(e)}")
-            
-    else:
-        raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported.")
-         
-    fields = []
-    for i, header in enumerate(headers):
-            field_name = str(header).strip() if header else f"column_{i}"
-        field_type = "Text"
+        headers = []
+        sample_data = None
         
-        # Infer type from sample data if available
-        if sample_data and len(sample_data) > i:
-            val = sample_data[i]
+        if file.filename.endswith('.csv'):
+            content = await file.read()
+            decoded = content.decode('utf-8')
+            try:
+                f = io.StringIO(decoded)
+                reader = csv.reader(f)
+                headers = next(reader)
+                try:
+                    sample_data = next(reader)
+                except StopIteration:
+                    pass
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+                
+        elif file.filename.endswith(('.xlsx', '.xls')):
+            try:
+                contents = await file.read()
+                df = pd.read_excel(io.BytesIO(contents), nrows=5)
+                headers = df.columns.tolist()
+                if not df.empty:
+                    sample_data = df.iloc[0].tolist()
+                    # Convert numpy types to native python types for JSON serialization
+                    sample_data = [
+                        x.item() if hasattr(x, 'item') else x 
+                        for x in sample_data
+                    ]
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to parse Excel file: {str(e)}")
+                
+        else:
+            raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported.")
+             
+        fields = []
+        for i, header in enumerate(headers):
+            field_name = str(header).strip() if header else f"column_{i}"
+            field_type = "Text"
+        
+            # Infer type from sample data if available
+            if sample_data and len(sample_data) > i:
+                val = sample_data[i]
                 # Handle None values and pandas NaT
                 if val is None or (hasattr(val, '__class__') and 'NaT' in str(type(val))):
                     field_type = "Text"
@@ -1380,7 +1416,7 @@ async def infer_schema_from_file(
                         if pd.isna(val):
                             field_type = "Text"
                         else:
-                field_type = "Number"
+                            field_type = "Number"
                     except:
                         field_type = "Number"
                 elif isinstance(val, str):
@@ -1393,22 +1429,22 @@ async def infer_schema_from_file(
                         pass
                     # Check for boolean strings
                     if val_str.lower() in ['true', 'false', 'yes', 'no', '0', '1']:
-                 field_type = "Select"
+                        field_type = "Select"
                 # Basic date check
                 elif hasattr(val, 'strftime'):
                     field_type = "Date"
             
-        fields.append({
-            "field_name": field_name,
+            fields.append({
+                "field_name": field_name,
                 "field_key": field_name.lower().replace(" ", "_").replace("-", "_"),
-            "field_type": field_type,
-            "is_required": False,
-            "is_primary_key": False, 
-            "is_unique": False,
-            "is_indexed": False
-        })
+                "field_type": field_type,
+                "is_required": False,
+                "is_primary_key": False, 
+                "is_unique": False,
+                "is_indexed": False
+            })
         
-    return {"fields": fields}
+        return {"fields": fields}
 
     except HTTPException:
         raise
@@ -2005,4 +2041,163 @@ async def delete_table_field(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete field: {str(e)}")
+
+
+# ============ Import Orders to Channel Table ============
+
+@router.post("/{channel_id}/import-orders")
+async def import_orders_to_channel(
+    channel_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Import orders from uploaded file into the channel's order table
+    """
+    
+    # Verify channel
+    channel = db.query(Channel).filter(
+        Channel.id == channel_id,
+        Channel.company_id == current_user.company_id
+    ).first()
+    
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Get the order table for this channel
+    order_table = db.query(ChannelTable).filter(
+        ChannelTable.channel_id == channel_id,
+        ChannelTable.table_type == "orders"
+    ).first()
+    
+    if not order_table:
+        raise HTTPException(
+            status_code=404,
+            detail="Order table not found for this channel. Please create an order table first."
+        )
+    
+    # Get schema fields for the order table
+    schema_fields = db.query(ChannelTableSchema).filter(
+        ChannelTableSchema.channel_table_id == order_table.id
+    ).all()
+    
+    if not schema_fields:
+        raise HTTPException(
+            status_code=400,
+            detail="No fields configured for order table. Please configure fields in Channel Settings first."
+        )
+    
+    try:
+        # Read file
+        content = await file.read()
+        
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        elif file.filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(content))
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Use CSV or Excel files.")
+        
+        # Create mapping: CSV column name -> database column name
+        # Match CSV columns to schema fields by field_name or column_name
+        column_mapping = {}
+        for field in schema_fields:
+            field_name = field.field_name or field.column_name
+            # Try to match CSV column (case-insensitive, with variations)
+            for csv_col in df.columns:
+                csv_col_clean = str(csv_col).strip().lower()
+                field_name_clean = field_name.lower() if field_name else ""
+                column_name_clean = field.column_name.lower()
+                
+                if (csv_col_clean == field_name_clean or 
+                    csv_col_clean == column_name_clean or
+                    csv_col_clean.replace(" ", "_") == column_name_clean or
+                    csv_col_clean.replace("_", " ") == field_name_clean):
+                    column_mapping[csv_col] = field.column_name
+                    break
+        
+        if not column_mapping:
+            raise HTTPException(
+                status_code=400,
+                detail="No matching columns found. Please ensure CSV columns match field names configured in Channel Settings."
+            )
+        
+        imported_count = 0
+        failed_count = 0
+        errors = []
+        
+        # Process each row
+        for index, row in df.iterrows():
+            try:
+                # Build data dict for INSERT
+                data_dict = {}
+                
+                # Map CSV columns to database columns
+                for csv_col, db_col in column_mapping.items():
+                    value = row[csv_col] if csv_col in row else None
+                    if pd.isna(value):
+                        value = None
+                    else:
+                        # Convert to string for now (can be enhanced with type conversion)
+                        value = str(value).strip() if value else None
+                    data_dict[db_col] = value
+                
+                # Add system fields
+                data_dict['company_id'] = current_user.company_id
+                data_dict['uploaded_by_user_id'] = current_user.id
+                data_dict['uploaded_at'] = datetime.utcnow()
+                
+                # Store raw data as JSON
+                import json
+                raw_row = {str(k): str(v) if not pd.isna(v) else None for k, v in row.to_dict().items()}
+                data_dict['raw_data'] = json.dumps(raw_row, default=str)
+                
+                # Generate channel_record_id if not provided
+                if 'channel_record_id' not in data_dict or not data_dict.get('channel_record_id'):
+                    # Try to find order_id field
+                    order_id = None
+                    for key, val in data_dict.items():
+                        if 'order' in key.lower() and 'id' in key.lower() and val:
+                            order_id = val
+                            break
+                    data_dict['channel_record_id'] = order_id or f"{channel.channel_name}_{index + 1}_{datetime.utcnow().timestamp()}"
+                
+                # Build INSERT query
+                columns = list(data_dict.keys())
+                placeholders = [f":{col}" for col in columns]
+                
+                insert_sql = f"""
+                    INSERT INTO {order_table.table_name} 
+                    ({', '.join(columns)})
+                    VALUES ({', '.join(placeholders)})
+                """
+                
+                db.execute(text(insert_sql), data_dict)
+                imported_count += 1
+                
+            except Exception as e:
+                failed_count += 1
+                errors.append(f"Row {index + 1}: {str(e)}")
+                continue
+        
+        # Update record count
+        order_table.record_count = imported_count
+        db.commit()
+        
+        return {
+            "success": True,
+            "imported_count": imported_count,
+            "failed_count": failed_count,
+            "errors": errors[:10],  # Return first 10 errors
+            "message": f"Successfully imported {imported_count} orders to {channel.channel_name}. {failed_count} failed.",
+            "table_name": order_table.table_name,
+            "channel_name": channel.channel_name
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
 

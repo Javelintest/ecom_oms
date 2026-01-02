@@ -16,8 +16,9 @@ window.approveTransferAction = async function (transferId) {
 
   if (result.isConfirmed) {
     try {
+      const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
       await axios.post(
-        `${API_BASE_URL}/inventory/stock-transfers/${transferId}/approve`
+        `${apiBase}/mango/inventory/stock-transfers/${transferId}/approve`
       );
       Swal.fire("Success", "Transfer approved successfully!", "success");
       loadSection("inv_transfer"); // Reload
@@ -54,8 +55,9 @@ window.rejectTransferAction = async function (transferId) {
 
   if (reason) {
     try {
+      const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
       await axios.post(
-        `${API_BASE_URL}/inventory/stock-transfers/${transferId}/reject`,
+        `${apiBase}/mango/inventory/stock-transfers/${transferId}/reject`,
         {
           rejection_reason: reason,
         }
@@ -82,14 +84,15 @@ async function renderStockTransferEntry(container, transferId = null) {
 
   try {
     // Fetch data
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
     const requests = [
-      axios.get(`${API_BASE_URL}/inventory/warehouses`),
-      axios.get(`${API_BASE_URL}/inventory/products`),
+      axios.get(`${apiBase}/mango/inventory/warehouses`),
+      axios.get(`${apiBase}/mango/inventory/products`),
     ];
 
     if (isEdit) {
       requests.push(
-        axios.get(`${API_BASE_URL}/inventory/stock-transfers/${transferId}`)
+        axios.get(`${apiBase}/mango/inventory/stock-transfers/${transferId}`)
       );
     }
 
@@ -421,16 +424,17 @@ window.saveTransferDraft = async function (transferId = null) {
   formData.is_draft = true; // Mark as draft
 
   try {
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
     if (transferId) {
       // Update existing draft
       await axios.put(
-        `${API_BASE_URL}/inventory/stock-transfers/${transferId}`,
+        `${apiBase}/mango/inventory/stock-transfers/${transferId}`,
         formData
       );
       Swal.fire("Success", "Draft updated successfully!", "success");
     } else {
       // Create new draft
-      await axios.post(`${API_BASE_URL}/inventory/stock-transfers`, formData);
+      await axios.post(`${apiBase}/mango/inventory/stock-transfers`, formData);
       Swal.fire("Success", "Draft saved successfully!", "success");
     }
     loadSection("inv_transfer");
@@ -452,18 +456,19 @@ window.submitTransferForApproval = async function (transferId = null) {
   formData.is_draft = false; // Submit for approval
 
   try {
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
     if (transferId) {
       // Update draft then submit
       await axios.put(
-        `${API_BASE_URL}/inventory/stock-transfers/${transferId}`,
+        `${apiBase}/mango/inventory/stock-transfers/${transferId}`,
         formData
       );
       await axios.post(
-        `${API_BASE_URL}/inventory/stock-transfers/${transferId}/submit-for-approval`
+        `${apiBase}/mango/inventory/stock-transfers/${transferId}/submit-for-approval`
       );
     } else {
       // Create and auto-submit
-      await axios.post(`${API_BASE_URL}/inventory/stock-transfers`, formData);
+      await axios.post(`${apiBase}/mango/inventory/stock-transfers`, formData);
     }
     Swal.fire("Success", "Transfer submitted for approval!", "success");
     loadSection("inv_transfer");
@@ -529,12 +534,13 @@ function collectTransferFormData() {
 // Render Stock Transfer View (Detail Page)
 async function renderStockTransferView(container, transferId) {
   try {
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
     const transfer = (
-      await axios.get(`${API_BASE_URL}/inventory/stock-transfers/${transferId}`)
+      await axios.get(`${apiBase}/mango/inventory/stock-transfers/${transferId}`)
     ).data;
-    const warehouses = (await axios.get(`${API_BASE_URL}/inventory/warehouses`))
+    const warehouses = (await axios.get(`${apiBase}/mango/inventory/warehouses`))
       .data;
-    const products = (await axios.get(`${API_BASE_URL}/inventory/products`))
+    const products = (await axios.get(`${apiBase}/mango/inventory/products`))
       .data;
 
     const sourceWh = warehouses.find(

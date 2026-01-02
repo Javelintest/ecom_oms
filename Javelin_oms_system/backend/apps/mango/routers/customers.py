@@ -1,7 +1,8 @@
 """Customer Management API Endpoints"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from sqlalchemy import func, extract
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -396,4 +397,149 @@ def get_customer_statement(
         "closing_balance": closing_balance,
         "total_debit": total_debit,
         "total_credit": total_credit
+    }
+
+
+@router.get("/{customer_id}/analytics")
+def get_customer_analytics(
+    customer_id: int,
+    months: int = Query(12, description="Number of months of data to fetch"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get comprehensive customer analytics and statistics"""
+    
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    # Calculate date range
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=months * 30)
+    
+    # Get all ledger entries in date range
+    ledger_entries = db.query(CustomerLedger).filter(
+        CustomerLedger.customer_id == customer_id,
+        CustomerLedger.company_id == current_user.get("company_id", 1),
+        CustomerLedger.transaction_date >= start_date,
+        CustomerLedger.transaction_date <= end_date
+    ).order_by(CustomerLedger.transaction_date).all()
+    
+    # Calculate monthly trends
+    monthly_data = {}
+    for entry in ledger_entries:
+        month_key = entry.transaction_date.strftime("%Y-%m")
+        if month_key not in monthly_data:
+            monthly_data[month_key] = {
+                "sales": 0,
+                "payments": 0,
+                "returns": 0,
+                "balance": 0
+            }
+        
+        if entry.transaction_type == "INVOICE":
+            monthly_data[month_key]["sales"] += float(entry.debit_amount)
+        elif entry.transaction_type == "PAYMENT":
+            monthly_data[month_key]["payments"] += float(entry.credit_amount)
+        elif entry.transaction_type in ["CREDIT_NOTE", "RETURN"]:
+            monthly_data[month_key]["returns"] += float(entry.credit_amount)
+        
+        monthly_data[month_key]["balance"] = float(entry.balance)
+    
+    # Convert to list format for frontend
+    monthly_trends = []
+    for month in sorted(monthly_data.keys()):
+        monthly_trends.append({
+            "month": month,
+            **monthly_data[month]
+        })
+    
+    # Transaction breakdown by type
+    transaction_breakdown = {}
+    for entry in ledger_entries:
+        txn_type = entry.transaction_type
+        if txn_type not in transaction_breakdown:
+            transaction_breakdown[txn_type] = {
+                "count": 0,
+                "total_amount": 0
+            }
+        transaction_breakdown[txn_type]["count"] += 1
+        if entry.debit_amount > 0:
+            transaction_breakdown[txn_type]["total_amount"] += float(entry.debit_amount)
+        if entry.credit_amount > 0:
+            transaction_breakdown[txn_type]["total_amount"] += float(entry.credit_amount)
+    
+    # Outstanding invoices
+    outstanding_invoices = db.query(CustomerLedger).filter(
+        CustomerLedger.customer_id == customer_id,
+        CustomerLedger.transaction_type == "INVOICE",
+        CustomerLedger.is_reconciled == False,
+        CustomerLedger.debit_amount > 0
+    ).order_by(CustomerLedger.due_date.asc()).limit(10).all()
+    
+    outstanding_list = []
+    for inv in outstanding_invoices:
+        days_overdue = 0
+        if inv.due_date:
+            days_overdue = (datetime.now() - inv.due_date).days
+        outstanding_list.append({
+            "id": inv.id,
+            "reference_number": inv.reference_number,
+            "invoice_date": inv.transaction_date.isoformat() if inv.transaction_date else None,
+            "due_date": inv.due_date.isoformat() if inv.due_date else None,
+            "amount": float(inv.debit_amount),
+            "days_overdue": days_overdue if days_overdue > 0 else 0
+        })
+    
+    # Calculate statistics
+    total_sales = sum(float(e.debit_amount) for e in ledger_entries if e.transaction_type == "INVOICE")
+    total_payments = sum(float(e.credit_amount) for e in ledger_entries if e.transaction_type == "PAYMENT")
+    total_returns = sum(float(e.credit_amount) for e in ledger_entries if e.transaction_type in ["CREDIT_NOTE", "RETURN"])
+    avg_invoice_value = total_sales / max(transaction_breakdown.get("INVOICE", {}).get("count", 1), 1)
+    
+    # Calculate average payment days (simplified)
+    payment_days = []
+    for entry in ledger_entries:
+        if entry.transaction_type == "PAYMENT" and entry.reference_number:
+            # Find corresponding invoice
+            invoice = db.query(CustomerLedger).filter(
+                CustomerLedger.customer_id == customer_id,
+                CustomerLedger.reference_number == entry.reference_number,
+                CustomerLedger.transaction_type == "INVOICE"
+            ).first()
+            if invoice and invoice.due_date:
+                days = (entry.transaction_date - invoice.due_date).days
+                if days > 0:
+                    payment_days.append(days)
+    
+    avg_payment_days = sum(payment_days) / len(payment_days) if payment_days else 0
+    
+    # Recent activity (last 10 transactions)
+    recent_activity = ledger_entries[-10:] if len(ledger_entries) > 10 else ledger_entries
+    recent_list = []
+    for act in reversed(recent_activity):
+        recent_list.append({
+            "id": act.id,
+            "date": act.transaction_date.isoformat() if act.transaction_date else None,
+            "type": act.transaction_type,
+            "reference": act.reference_number,
+            "description": act.description,
+            "amount": float(act.debit_amount if act.debit_amount > 0 else act.credit_amount),
+            "is_debit": act.debit_amount > 0
+        })
+    
+    return {
+        "monthly_trends": monthly_trends,
+        "transaction_breakdown": transaction_breakdown,
+        "outstanding_invoices": outstanding_list,
+        "recent_activity": recent_list,
+        "statistics": {
+            "total_sales": total_sales,
+            "total_payments": total_payments,
+            "total_returns": total_returns,
+            "avg_invoice_value": avg_invoice_value,
+            "avg_payment_days": round(avg_payment_days, 1),
+            "total_transactions": len(ledger_entries),
+            "outstanding_count": len(outstanding_list)
+        }
     }

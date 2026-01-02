@@ -702,3 +702,77 @@ class Warehouses(models.Model):
         db_table = 'warehouses'
 
 
+# ============ CHANNEL MANAGEMENT MODELS ============
+
+class Channels(models.Model):
+    """Multi-Channel Master System - Channels"""
+    company_id = models.IntegerField()
+    channel_name = models.CharField(max_length=200)
+    channel_type = models.CharField(max_length=50)  # marketplace, website, pos, api, custom
+    table_name = models.CharField(max_length=100, blank=True, null=True)  # Legacy support
+    is_active = models.IntegerField(default=1)
+    api_config = models.JSONField(blank=True, null=True)
+    sync_config = models.JSONField(blank=True, null=True)
+    created_at = models.DateTimeField(blank=True, null=True)
+    updated_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'channels'
+        verbose_name = 'Channel'
+        verbose_name_plural = 'Channels'
+
+    def __str__(self):
+        return f"{self.channel_name} ({self.channel_type})"
+
+
+class ChannelTables(models.Model):
+    """Multiple tables per channel"""
+    channel = models.ForeignKey(Channels, models.DO_NOTHING, db_column='channel_id', blank=True, null=True)
+    table_name = models.CharField(max_length=100, unique=True)
+    table_type = models.CharField(max_length=50, default='orders')  # orders, returns, inventory, custom
+    display_name = models.CharField(max_length=100, blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.IntegerField(default=1)
+    is_system = models.IntegerField(default=0)  # System tables cannot be deleted
+    record_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(blank=True, null=True)
+    updated_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'channel_tables'
+        verbose_name = 'Channel Table'
+        verbose_name_plural = 'Channel Tables'
+
+    def __str__(self):
+        return f"{self.display_name or self.table_name} ({self.table_type})"
+
+
+class ChannelTableSchema(models.Model):
+    """Schema fields for channel tables"""
+    channel = models.ForeignKey(Channels, models.DO_NOTHING, db_column='channel_id', blank=True, null=True)
+    channel_table = models.ForeignKey(ChannelTables, models.DO_NOTHING, db_column='channel_table_id', blank=True, null=True)
+    column_name = models.CharField(max_length=100)  # field_key (technical name)
+    field_name = models.CharField(max_length=100, blank=True, null=True)  # Display name
+    column_type = models.CharField(max_length=50)
+    column_length = models.IntegerField(blank=True, null=True)
+    is_nullable = models.IntegerField(default=1)
+    is_required = models.IntegerField(default=0)
+    is_unique = models.IntegerField(default=0)
+    is_primary_key = models.IntegerField(default=0)
+    is_indexed = models.IntegerField(default=0)
+    on_duplicate_action = models.CharField(max_length=50, default='skip', blank=True, null=True)
+    default_value = models.CharField(max_length=255, blank=True, null=True)
+    column_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'channel_table_schema'
+        verbose_name = 'Channel Table Field'
+        verbose_name_plural = 'Channel Table Fields'
+
+    def __str__(self):
+        return f"{self.field_name or self.column_name} ({self.column_type})"
+

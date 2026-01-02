@@ -3,8 +3,8 @@
  * Frontend JavaScript for managing channels
  */
 
-// API Base URL
-const CHANNEL_API_BASE = `${API_BASE_URL}/api/mango/channels`;
+// API Base URL - Use global API_BASE_URL if available, otherwise define it
+const CHANNEL_API_BASE = (typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000') + '/api/mango/channels';
 
 /**
  * Load channels section
@@ -173,21 +173,25 @@ async function loadChannelStats(channelId) {
     });
 
     const stats = response.data;
-    document.getElementById(`channel-stats-${channelId}`).innerHTML = `
+    const statsElement = document.getElementById(`channel-stats-${channelId}`);
+    if (statsElement) {
+      statsElement.innerHTML = `
             <div class="progress mb-2" style="height: 20px;">
                 <div class="progress-bar bg-success" role="progressbar" 
-                    style="width: ${stats.sync_percentage}%" 
-                    aria-valuenow="${stats.sync_percentage}" aria-valuemin="0" aria-valuemax="100">
-                    ${stats.sync_percentage}%
+                    style="width: ${stats.sync_percentage || 0}%" 
+                    aria-valuenow="${stats.sync_percentage || 0}" aria-valuemin="0" aria-valuemax="100">
+                    ${stats.sync_percentage || 0}%
                 </div>
             </div>
             <small class="text-muted">
-                <i class="bi bi-box"></i> ${stats.total_orders} orders 
-                (<i class="bi bi-check-circle text-success"></i> ${stats.synced_orders} synced)
+                <i class="bi bi-box"></i> ${stats.total_orders || 0} orders 
+                (<i class="bi bi-check-circle text-success"></i> ${stats.synced_orders || 0} synced)
             </small>
         `;
+    }
   } catch (error) {
-    console.error(`Error loading stats for channel ${channelId}:`, error);
+    // Silently fail - element might not exist if user navigated away
+    console.debug(`Error loading stats for channel ${channelId}:`, error);
   }
 }
 
