@@ -815,15 +815,28 @@ async function updateQuotationStatusAction(quotationId, status, notes = null) {
       `${apiBase}/mango/quotations/${quotationId}/update-status`,
       {
         new_status: status,
-        notes: notes
+        notes: notes || null
       },
       { headers: { Authorization: `Bearer ${token}` } }
     );
     
-    Swal.fire("Success", response.data.message, "success");
+    const message = response.data?.message || "Status updated successfully";
+    Swal.fire({
+      title: "Success",
+      text: typeof message === 'string' ? message : "Status updated successfully",
+      icon: "success",
+      timer: 2000,
+      showConfirmButton: false
+    });
     loadQuotations();
   } catch (error) {
-    Swal.fire("Error", error.response?.data?.detail || "Failed to update status", "error");
+    console.error("Error updating quotation status:", error);
+    const errorMessage = error.response?.data?.detail || error.message || "Failed to update status";
+    Swal.fire({
+      title: "Error",
+      text: typeof errorMessage === 'string' ? errorMessage : "Failed to update status",
+      icon: "error"
+    });
     throw error;
   }
 }

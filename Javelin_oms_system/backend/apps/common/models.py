@@ -674,6 +674,117 @@ class SalesOrderItem(Base):
     product = relationship("Product")
 
 
+class Invoice(Base):
+    """Tax Invoice Head"""
+    __tablename__ = "invoices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), index=True, nullable=False)
+    invoice_number = Column(String(50), unique=True, index=True)
+    sales_order_id = Column(Integer, ForeignKey("sales_orders.id"), index=True, nullable=True)  # Link to source sales order
+    quotation_id = Column(Integer, ForeignKey("quotations.id"), nullable=True)  # Link to source quotation
+    
+    # Dates
+    invoice_date = Column(DateTime, nullable=False, server_default=func.now())
+    due_date = Column(DateTime, nullable=True)
+    
+    # Customer
+    customer_id = Column(Integer, ForeignKey("customers.id"), index=True, nullable=False)
+    
+    # Status
+    status = Column(String(50), default="DRAFT", index=True)  
+    # DRAFT, SENT, PAID, PARTIAL, OVERDUE, CANCELLED
+    
+    # Financials
+    subtotal = Column(Numeric(12, 2), default=0)
+    tax_amount = Column(Numeric(12, 2), default=0)
+    discount_amount = Column(Numeric(12, 2), default=0)
+    shipping_charges = Column(Numeric(12, 2), default=0)
+    total_amount = Column(Numeric(12, 2), default=0)
+    paid_amount = Column(Numeric(12, 2), default=0)
+    balance_amount = Column(Numeric(12, 2), default=0)
+    currency = Column(String(10), default="INR")
+    
+    # Tax Information (GST/TAX)
+    gst_number = Column(String(50))  # Company GST number
+    customer_gst_number = Column(String(50))  # Customer GST number
+    place_of_supply = Column(String(100))  # Place of supply for GST
+    tax_type = Column(String(20), default="GST")  # GST, VAT, etc.
+    igst_amount = Column(Numeric(12, 2), default=0)  # Integrated GST
+    cgst_amount = Column(Numeric(12, 2), default=0)  # Central GST
+    sgst_amount = Column(Numeric(12, 2), default=0)  # State GST
+    
+    # Shipping
+    shipping_address = Column(Text)
+    billing_address = Column(Text)
+    shipping_method = Column(String(100))
+    tracking_number = Column(String(100))
+    
+    # Terms & Notes
+    payment_terms = Column(String(200))
+    delivery_terms = Column(String(200))
+    notes = Column(Text)
+    terms_conditions = Column(Text)
+    
+    # Payment tracking
+    payment_status = Column(String(50), default="UNPAID")  # UNPAID, PARTIAL, PAID
+    last_payment_date = Column(DateTime, nullable=True)
+    
+    # Metadata
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sent_date = Column(DateTime, nullable=True)
+    paid_date = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    customer = relationship("Customer")
+    sales_order = relationship("SalesOrder")
+    quotation = relationship("Quotation")
+    items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
+
+
+class InvoiceItem(Base):
+    """Invoice Lines"""
+    __tablename__ = "invoice_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    sales_order_item_id = Column(Integer, ForeignKey("sales_order_items.id"), nullable=True)  # Link to SO item
+    
+    # Item details
+    sku = Column(String(100), index=True)
+    description = Column(String(500))
+    hsn_code = Column(String(20))  # HSN code for GST
+    quantity = Column(Integer, nullable=False, default=1)
+    unit_price = Column(Numeric(10, 2), nullable=False)
+    
+    # Pricing
+    discount_percent = Column(Numeric(5, 2), default=0)
+    discount_amount = Column(Numeric(10, 2), default=0)
+    tax_rate = Column(Numeric(5, 2), default=0)
+    tax_amount = Column(Numeric(10, 2), default=0)
+    line_total = Column(Numeric(12, 2), nullable=False)
+    
+    # Tax breakdown
+    igst_rate = Column(Numeric(5, 2), default=0)
+    igst_amount = Column(Numeric(10, 2), default=0)
+    cgst_rate = Column(Numeric(5, 2), default=0)
+    cgst_amount = Column(Numeric(10, 2), default=0)
+    sgst_rate = Column(Numeric(5, 2), default=0)
+    sgst_amount = Column(Numeric(10, 2), default=0)
+    
+    # Additional info
+    unit_of_measure = Column(String(20), default="PCS")
+    notes = Column(Text)
+    
+    # Relationships
+    invoice = relationship("Invoice", back_populates="items")
+    product = relationship("Product")
+
+
 class GRN(Base):
     """Goods Receipt Note Head"""
     __tablename__ = "grns"

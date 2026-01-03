@@ -11,6 +11,18 @@ const channelOrderState = {
   fieldMapping: {},
 };
 
+// Sales Order State
+const salesOrderState = {
+  customers: [],
+  products: [],
+  quotations: [],
+  currentOrder: null,
+  orderItems: [],
+  selectedCustomer: null,
+  taxRate: 18.0,
+  shippingCharges: 0.0
+};
+
 /**
  * Render channel orders interface
  */
@@ -59,12 +71,19 @@ function renderChannelOrders(container) {
 
       <!-- Manual Order Panel -->
       <div class="tab-pane fade" id="manual-panel" role="tabpanel">
-        ${renderManualOrderPanel()}
+        <div id="manual-order-container">
+          <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-3 text-muted">Loading order form...</p>
+          </div>
+        </div>
       </div>
 
       <!-- Order List Panel -->
       <div class="tab-pane fade" id="list-panel" role="tabpanel">
-        ${renderOrderListPanel()}
+        <div id="order-list-container">
+          ${renderOrderListPanel()}
+        </div>
       </div>
     </div>
   `;
@@ -74,6 +93,44 @@ function renderChannelOrders(container) {
   
   // Populate channels after DOM is rendered
   setTimeout(() => populateChannelSelector(), 200);
+  
+  // Load sales orders when list tab is shown
+  setTimeout(() => {
+    const listTab = document.getElementById('list-tab');
+    if (listTab) {
+      listTab.addEventListener('shown.bs.tab', () => {
+        loadSalesOrders();
+      });
+    }
+    // Also load if already on list tab
+    if (listTab && listTab.classList.contains('active')) {
+      loadSalesOrders();
+    }
+  }, 300);
+  
+  // Initialize manual order panel when shown
+  setTimeout(async () => {
+    const manualTab = document.getElementById('manual-tab');
+    if (manualTab) {
+      manualTab.addEventListener('shown.bs.tab', async () => {
+        const container = document.getElementById('manual-order-container');
+        if (container && !container.querySelector('#manual-order-form')) {
+          container.innerHTML = await renderManualOrderPanel();
+          // Add initial item
+          setTimeout(() => addOrderItem(), 100);
+        }
+      });
+    }
+    // Also initialize if already on manual tab
+    const manualPanel = document.getElementById('manual-panel');
+    if (manualPanel && manualPanel.classList.contains('active')) {
+      const container = document.getElementById('manual-order-container');
+      if (container) {
+        container.innerHTML = await renderManualOrderPanel();
+        setTimeout(() => addOrderItem(), 100);
+      }
+    }
+  }, 300);
 }
 
 /**
@@ -172,116 +229,214 @@ function renderImportPanel() {
 }
 
 /**
- * Render manual order creation panel
+ * Render manual order creation panel (Advanced)
  */
-function renderManualOrderPanel() {
+async function renderManualOrderPanel() {
+  const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+  const token = localStorage.getItem("access_token");
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Load customers and products
+  try {
+    const [customersRes, productsRes, quotationsRes] = await Promise.all([
+      axios.get(`${apiBase}/mango/customers`, { headers }),
+      axios.get(`${apiBase}/mango/inventory/products`, { headers }),
+      axios.get(`${apiBase}/mango/quotations?status=ACCEPTED`, { headers }).catch(() => ({ data: [] }))
+    ]);
+
+    salesOrderState.customers = customersRes.data || [];
+    salesOrderState.products = productsRes.data || [];
+    salesOrderState.quotations = quotationsRes.data || [];
+  } catch (error) {
+    console.error("Error loading data:", error);
+    Swal.fire("Error", "Failed to load customers/products", "error");
+  }
+
+  // Reset order items
+  salesOrderState.orderItems = [];
+  salesOrderState.selectedCustomer = null;
+
   return `
     <div class="row g-4">
       <div class="col-lg-8">
         <div class="card border-0 shadow-sm">
-          <div class="card-header bg-primary text-white">
-            <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Create New Order</h5>
+          <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Create New Sales Order</h5>
+            <div class="btn-group btn-group-sm">
+              <button type="button" class="btn btn-light" onclick="loadFromQuotation()" title="Convert from Quotation">
+                <i class="bi bi-file-text me-1"></i>From Quote
+              </button>
+            </div>
           </div>
           <div class="card-body">
-            <form id="manual-order-form">
-              <!-- Customer Information -->
-              <h6 class="fw-bold mb-3">Customer Information</h6>
-              <div class="row mb-3">
-                <div class="col-md-6">
-                  <label class="form-label">Customer Name *</label>
-                  <input type="text" class="form-control" required>
+            <form id="manual-order-form" onsubmit="handleCreateOrder(event)">
+              <!-- Customer Selection -->
+              <div class="card border mb-4">
+                <div class="card-header bg-light">
+                  <h6 class="mb-0"><i class="bi bi-person me-2"></i>Customer Information</h6>
                 </div>
-                <div class="col-md-6">
-                  <label class="form-label">Email</label>
-                  <input type="email" class="form-control">
-                </div>
-              </div>
-              <div class="row mb-3">
-                <div class="col-md-6">
-                  <label class="form-label">Phone *</label>
-                  <input type="tel" class="form-control" required>
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Platform</label>
-                  <select class="form-select">
-                    <option value="direct">Direct/Walk-in</option>
-                    <option value="website">Website</option>
-                    <option value="phone">Phone Order</option>
-                  </select>
+                <div class="card-body">
+                  <div class="row mb-3">
+                    <div class="col-md-12">
+                      <label class="form-label fw-bold">Select Customer <span class="text-danger">*</span></label>
+                      <select class="form-select" id="order-customer" required onchange="handleCustomerSelect(this.value)">
+                        <option value="">-- Select Customer --</option>
+                        ${salesOrderState.customers.map(c => `
+                          <option value="${c.id}" data-email="${c.email || ''}" data-phone="${c.phone || ''}" data-address="${c.address || ''}">
+                            ${c.name} ${c.customer_code ? `(${c.customer_code})` : ''}
+                          </option>
+                        `).join('')}
+                      </select>
+                      <small class="text-muted">Or <a href="#" onclick="loadSection('sales_customers')">create new customer</a></small>
+                    </div>
+                  </div>
+                  <div id="customer-details-preview" class="alert alert-info" style="display: none;">
+                    <div class="row">
+                      <div class="col-md-6">
+                        <strong>Email:</strong> <span id="customer-email-display">-</span><br>
+                        <strong>Phone:</strong> <span id="customer-phone-display">-</span>
+                      </div>
+                      <div class="col-md-6">
+                        <strong>Address:</strong> <span id="customer-address-display">-</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <hr>
+              <!-- Order Details -->
+              <div class="card border mb-4">
+                <div class="card-header bg-light">
+                  <h6 class="mb-0"><i class="bi bi-calendar me-2"></i>Order Details</h6>
+                </div>
+                <div class="card-body">
+                  <div class="row mb-3">
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold">Order Date <span class="text-danger">*</span></label>
+                      <input type="date" class="form-control" id="order-date" 
+                             value="${new Date().toISOString().split('T')[0]}" required>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold">Delivery Date</label>
+                      <input type="date" class="form-control" id="delivery-date" 
+                             value="${new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0]}">
+                    </div>
+                  </div>
+                  <div class="row mb-3">
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold">Status</label>
+                      <select class="form-select" id="order-status">
+                        <option value="PENDING">Pending</option>
+                        <option value="CONFIRMED">Confirmed</option>
+                        <option value="PROCESSING">Processing</option>
+                      </select>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold">Currency</label>
+                      <select class="form-select" id="order-currency">
+                        <option value="INR" selected>INR (₹)</option>
+                        <option value="USD">USD ($)</option>
+                        <option value="EUR">EUR (€)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <!-- Order Items -->
-              <h6 class="fw-bold mb-3">Order Items</h6>
-              <div id="order-items">
-                <div class="row mb-2">
-                  <div class="col-md-5">
-                    <label class="form-label">Product</label>
-                    <select class="form-select">
-                      <option>Select Product...</option>
-                    </select>
-                  </div>
-                  <div class="col-md-2">
-                    <label class="form-label">Quantity</label>
-                    <input type="number" class="form-control" value="1" min="1">
-                  </div>
-                  <div class="col-md-2">
-                    <label class="form-label">Price</label>
-                    <input type="number" class="form-control" step="0.01">
-                  </div>
-                  <div class="col-md-2">
-                    <label class="form-label">Total</label>
-                    <input type="text" class="form-control" readonly>
-                  </div>
-                  <div class="col-md-1 d-flex align-items-end">
-                    <button type="button" class="btn btn-sm btn-outline-danger">
-                      <i class="bi bi-trash"></i>
+              <div class="card border mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                  <h6 class="mb-0"><i class="bi bi-list-ul me-2"></i>Order Items</h6>
+                  <div class="btn-group btn-group-sm">
+                    <button type="button" class="btn btn-primary" onclick="addOrderItem()">
+                      <i class="bi bi-plus-lg me-1"></i>Add Item
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" onclick="showBulkAddItemsModal()" title="Bulk Add">
+                      <i class="bi bi-list-columns"></i>
                     </button>
                   </div>
                 </div>
+                <div class="card-body p-0">
+                  <div class="table-responsive">
+                    <table class="table table-bordered mb-0" id="order-items-table">
+                      <thead class="bg-light">
+                        <tr>
+                          <th style="width: 30%">Product</th>
+                          <th style="width: 10%">Qty</th>
+                          <th style="width: 15%">Unit Price</th>
+                          <th style="width: 10%">Discount %</th>
+                          <th style="width: 10%">Tax %</th>
+                          <th style="width: 15%">Total</th>
+                          <th style="width: 10%">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody id="order-items-tbody">
+                        <!-- Items will be added here -->
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-              <button type="button" class="btn btn-sm btn-outline-primary mb-3">
-                <i class="bi bi-plus me-2"></i>Add Item
-              </button>
-
-              <hr>
 
               <!-- Shipping Address -->
-              <h6 class="fw-bold mb-3">Shipping Address</h6>
-              <div class="mb-3">
-                <label class="form-label">Address Line 1 *</label>
-                <input type="text" class="form-control" required>
-              </div>
-              <div class="row mb-3">
-                <div class="col-md-6">
-                  <label class="form-label">City *</label>
-                  <input type="text" class="form-control" required>
+              <div class="card border mb-4">
+                <div class="card-header bg-light">
+                  <h6 class="mb-0"><i class="bi bi-truck me-2"></i>Shipping Address</h6>
                 </div>
-                <div class="col-md-6">
-                  <label class="form-label">State *</label>
-                  <input type="text" class="form-control" required>
-                </div>
-              </div>
-              <div class="row mb-3">
-                <div class="col-md-6">
-                  <label class="form-label">Pincode *</label>
-                  <input type="text" class="form-control" required>
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Country</label>
-                  <input type="text" class="form-control" value="India">
+                <div class="card-body">
+                  <div class="mb-3">
+                    <label class="form-label fw-bold">Shipping Address <span class="text-danger">*</span></label>
+                    <textarea class="form-control" id="shipping-address" rows="3" 
+                              placeholder="Enter complete shipping address..." required></textarea>
+                  </div>
+                  <div class="row mb-3">
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold">Shipping Method</label>
+                      <input type="text" class="form-control" id="shipping-method" 
+                             placeholder="e.g., Standard, Express, Overnight">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold">Tracking Number</label>
+                      <input type="text" class="form-control" id="tracking-number" 
+                             placeholder="Enter after shipping">
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <!-- Submit -->
-              <div class="d-grid gap-2 mt-4">
+              <!-- Terms & Notes -->
+              <div class="card border mb-4">
+                <div class="card-header bg-light">
+                  <h6 class="mb-0"><i class="bi bi-file-text me-2"></i>Terms & Notes</h6>
+                </div>
+                <div class="card-body">
+                  <div class="row mb-3">
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold">Payment Terms</label>
+                      <input type="text" class="form-control" id="payment-terms" 
+                             placeholder="e.g., NET 30, Due on receipt" value="NET 30">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold">Delivery Terms</label>
+                      <input type="text" class="form-control" id="delivery-terms" 
+                             placeholder="e.g., FOB, CIF">
+                    </div>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label fw-bold">Notes</label>
+                    <textarea class="form-control" id="order-notes" rows="3" 
+                              placeholder="Internal notes or special instructions..."></textarea>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Submit Buttons -->
+              <div class="d-grid gap-2">
                 <button type="submit" class="btn btn-success btn-lg">
-                  <i class="bi bi-check2-circle me-2"></i>Create Order
+                  <i class="bi bi-check2-circle me-2"></i>Create Sales Order
                 </button>
-                <button type="reset" class="btn btn-outline-secondary">
-                  Reset Form
+                <button type="button" class="btn btn-outline-secondary" onclick="resetOrderForm()">
+                  <i class="bi bi-arrow-counterclockwise me-2"></i>Reset Form
                 </button>
               </div>
             </form>
@@ -289,29 +444,44 @@ function renderManualOrderPanel() {
         </div>
       </div>
 
-      <!-- Order Summary -->
+      <!-- Order Summary Sidebar -->
       <div class="col-lg-4">
         <div class="card border-0 shadow-sm sticky-top" style="top: 20px;">
-          <div class="card-header bg-light">
-            <h6 class="mb-0">Order Summary</h6>
+          <div class="card-header bg-primary text-white">
+            <h6 class="mb-0"><i class="bi bi-calculator me-2"></i>Order Summary</h6>
           </div>
           <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label small fw-bold">Tax Rate (%)</label>
+              <input type="number" class="form-control form-control-sm" id="tax-rate" 
+                     value="18" step="0.1" min="0" max="100" onchange="calculateOrderTotals()">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold">Shipping Charges</label>
+              <input type="number" class="form-control form-control-sm" id="shipping-charges" 
+                     value="0" step="0.01" min="0" onchange="calculateOrderTotals()">
+            </div>
+            <hr>
             <div class="d-flex justify-content-between mb-2">
               <span>Subtotal:</span>
-              <strong>₹0.00</strong>
+              <strong id="summary-subtotal">₹0.00</strong>
             </div>
             <div class="d-flex justify-content-between mb-2">
-              <span>Tax (18%):</span>
-              <strong>₹0.00</strong>
+              <span>Discount:</span>
+              <strong id="summary-discount">₹0.00</strong>
+            </div>
+            <div class="d-flex justify-content-between mb-2">
+              <span>Tax:</span>
+              <strong id="summary-tax">₹0.00</strong>
             </div>
             <div class="d-flex justify-content-between mb-2">
               <span>Shipping:</span>
-              <strong>₹0.00</strong>
+              <strong id="summary-shipping">₹0.00</strong>
             </div>
             <hr>
             <div class="d-flex justify-content-between">
-              <strong>Total:</strong>
-              <strong class="text-success">₹0.00</strong>
+              <strong class="fs-5">Total:</strong>
+              <strong class="fs-5 text-success" id="summary-total">₹0.00</strong>
             </div>
           </div>
         </div>
@@ -320,47 +490,477 @@ function renderManualOrderPanel() {
   `;
 }
 
+// Handle customer selection
+function handleCustomerSelect(customerId) {
+  if (!customerId) {
+    document.getElementById('customer-details-preview').style.display = 'none';
+    salesOrderState.selectedCustomer = null;
+    return;
+  }
+
+  const option = document.querySelector(`#order-customer option[value="${customerId}"]`);
+  if (!option) return;
+
+  const customer = salesOrderState.customers.find(c => c.id == customerId);
+  if (customer) {
+    salesOrderState.selectedCustomer = customer;
+    document.getElementById('customer-email-display').textContent = customer.email || '-';
+    document.getElementById('customer-phone-display').textContent = customer.phone || '-';
+    document.getElementById('customer-address-display').textContent = customer.address || '-';
+    document.getElementById('customer-details-preview').style.display = 'block';
+    
+    // Auto-fill shipping address if available
+    if (customer.address) {
+      document.getElementById('shipping-address').value = customer.address;
+    }
+  }
+}
+
+// Add order item
+let orderItemIndex = 0;
+function addOrderItem() {
+  const tbody = document.getElementById('order-items-tbody');
+  if (!tbody) return;
+
+  const itemId = orderItemIndex++;
+  const row = document.createElement('tr');
+  row.setAttribute('data-item-id', itemId);
+  row.innerHTML = `
+    <td>
+      <select class="form-select form-select-sm item-product" data-item-id="${itemId}" onchange="updateOrderItemProduct(${itemId}, this.value)">
+        <option value="">Select Product...</option>
+        ${salesOrderState.products.map(p => `
+          <option value="${p.id}" data-price="${p.sales_rate || p.purchase_rate || 0}" data-sku="${p.sku || ''}">
+            ${p.name} (${p.sku || 'N/A'})
+          </option>
+        `).join('')}
+      </select>
+      <textarea class="form-control form-control-sm mt-1 item-description" data-item-id="${itemId}" 
+                placeholder="Description" oninput="updateOrderItemDescription(${itemId}, this.value)"></textarea>
+    </td>
+    <td>
+      <input type="number" class="form-control form-control-sm item-qty" data-item-id="${itemId}" 
+             value="1" min="1" oninput="updateOrderItemQuantity(${itemId}, this.value)">
+    </td>
+    <td>
+      <input type="number" class="form-control form-control-sm item-price" data-item-id="${itemId}" 
+             value="0" step="0.01" min="0" oninput="updateOrderItemPrice(${itemId}, this.value)">
+    </td>
+    <td>
+      <input type="number" class="form-control form-control-sm item-discount" data-item-id="${itemId}" 
+             value="0" step="0.01" min="0" max="100" oninput="updateOrderItemDiscount(${itemId}, this.value)">
+    </td>
+    <td>
+      <input type="number" class="form-control form-control-sm item-tax" data-item-id="${itemId}" 
+             value="18" step="0.01" min="0" max="100" oninput="updateOrderItemTax(${itemId}, this.value)">
+    </td>
+    <td>
+      <div class="fw-bold item-total" id="item-total-${itemId}">₹0.00</div>
+    </td>
+    <td>
+      <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeOrderItem(${itemId})">
+        <i class="bi bi-trash"></i>
+      </button>
+    </td>
+  `;
+  tbody.appendChild(row);
+}
+
+// Update order item product
+function updateOrderItemProduct(itemId, productId) {
+  if (!productId) return;
+  const product = salesOrderState.products.find(p => p.id == productId);
+  if (product) {
+    const priceInput = document.querySelector(`.item-price[data-item-id="${itemId}"]`);
+    const descInput = document.querySelector(`.item-description[data-item-id="${itemId}"]`);
+    if (priceInput) priceInput.value = product.sales_rate || product.purchase_rate || 0;
+    if (descInput) descInput.value = product.name || '';
+    calculateItemTotal(itemId);
+    calculateOrderTotals();
+  }
+}
+
+// Update order item description
+function updateOrderItemDescription(itemId, description) {
+  // Just store it, no calculation needed
+}
+
+// Update order item quantity
+function updateOrderItemQuantity(itemId, quantity) {
+  calculateItemTotal(itemId);
+  calculateOrderTotals();
+}
+
+// Update order item price
+function updateOrderItemPrice(itemId, price) {
+  calculateItemTotal(itemId);
+  calculateOrderTotals();
+}
+
+// Update order item discount
+function updateOrderItemDiscount(itemId, discount) {
+  calculateItemTotal(itemId);
+  calculateOrderTotals();
+}
+
+// Update order item tax
+function updateOrderItemTax(itemId, tax) {
+  calculateItemTotal(itemId);
+  calculateOrderTotals();
+}
+
+// Calculate item total
+function calculateItemTotal(itemId) {
+  const qty = parseFloat(document.querySelector(`.item-qty[data-item-id="${itemId}"]`)?.value || 0);
+  const price = parseFloat(document.querySelector(`.item-price[data-item-id="${itemId}"]`)?.value || 0);
+  const discount = parseFloat(document.querySelector(`.item-discount[data-item-id="${itemId}"]`)?.value || 0);
+  const tax = parseFloat(document.querySelector(`.item-tax[data-item-id="${itemId}"]`)?.value || 0);
+
+  const subtotal = qty * price;
+  const discountAmount = (subtotal * discount) / 100;
+  const afterDiscount = subtotal - discountAmount;
+  const taxAmount = (afterDiscount * tax) / 100;
+  const total = afterDiscount + taxAmount;
+
+  const totalElement = document.getElementById(`item-total-${itemId}`);
+  if (totalElement) {
+    totalElement.textContent = `₹${total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+}
+
+// Calculate order totals
+function calculateOrderTotals() {
+  const items = document.querySelectorAll('#order-items-tbody tr');
+  let subtotal = 0;
+  let totalDiscount = 0;
+  let totalTax = 0;
+
+  items.forEach(row => {
+    const itemId = row.getAttribute('data-item-id');
+    const qty = parseFloat(document.querySelector(`.item-qty[data-item-id="${itemId}"]`)?.value || 0);
+    const price = parseFloat(document.querySelector(`.item-price[data-item-id="${itemId}"]`)?.value || 0);
+    const discount = parseFloat(document.querySelector(`.item-discount[data-item-id="${itemId}"]`)?.value || 0);
+    const tax = parseFloat(document.querySelector(`.item-tax[data-item-id="${itemId}"]`)?.value || 0);
+
+    const lineSubtotal = qty * price;
+    const lineDiscount = (lineSubtotal * discount) / 100;
+    const afterDiscount = lineSubtotal - lineDiscount;
+    const lineTax = (afterDiscount * tax) / 100;
+
+    subtotal += lineSubtotal;
+    totalDiscount += lineDiscount;
+    totalTax += lineTax;
+  });
+
+  const shipping = parseFloat(document.getElementById('shipping-charges')?.value || 0);
+  const total = subtotal - totalDiscount + totalTax + shipping;
+
+  // Update summary
+  document.getElementById('summary-subtotal').textContent = `₹${subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  document.getElementById('summary-discount').textContent = `₹${totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  document.getElementById('summary-tax').textContent = `₹${totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  document.getElementById('summary-shipping').textContent = `₹${shipping.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  document.getElementById('summary-total').textContent = `₹${total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// Remove order item
+function removeOrderItem(itemId) {
+  const row = document.querySelector(`tr[data-item-id="${itemId}"]`);
+  if (row) {
+    row.remove();
+    calculateOrderTotals();
+  }
+}
+
+// Handle create order
+async function handleCreateOrder(event) {
+  event.preventDefault();
+
+  const customerId = document.getElementById('order-customer')?.value;
+  if (!customerId) {
+    Swal.fire("Validation Error", "Please select a customer", "error");
+    return;
+  }
+
+  const items = [];
+  const itemRows = document.querySelectorAll('#order-items-tbody tr');
+  if (itemRows.length === 0) {
+    Swal.fire("Validation Error", "Please add at least one item", "error");
+    return;
+  }
+
+  itemRows.forEach(row => {
+    const itemId = row.getAttribute('data-item-id');
+    const productSelect = document.querySelector(`.item-product[data-item-id="${itemId}"]`);
+    const productId = productSelect?.value;
+    const qty = parseFloat(document.querySelector(`.item-qty[data-item-id="${itemId}"]`)?.value || 0);
+    const price = parseFloat(document.querySelector(`.item-price[data-item-id="${itemId}"]`)?.value || 0);
+    const discount = parseFloat(document.querySelector(`.item-discount[data-item-id="${itemId}"]`)?.value || 0);
+    const tax = parseFloat(document.querySelector(`.item-tax[data-item-id="${itemId}"]`)?.value || 0);
+    const description = document.querySelector(`.item-description[data-item-id="${itemId}"]`)?.value || '';
+
+    if (productId && qty > 0 && price > 0) {
+      items.push({
+        product_id: parseInt(productId),
+        quantity: qty,
+        unit_price: price,
+        discount_percent: discount,
+        tax_rate: tax,
+        description: description
+      });
+    }
+  });
+
+  if (items.length === 0) {
+    Swal.fire("Validation Error", "Please add valid items with quantity and price", "error");
+    return;
+  }
+
+  const orderData = {
+    customer_id: parseInt(customerId),
+    order_date: document.getElementById('order-date')?.value,
+    delivery_date: document.getElementById('delivery-date')?.value || null,
+    status: document.getElementById('order-status')?.value || 'PENDING',
+    currency: document.getElementById('order-currency')?.value || 'INR',
+    shipping_address: document.getElementById('shipping-address')?.value,
+    shipping_method: document.getElementById('shipping-method')?.value || null,
+    payment_terms: document.getElementById('payment-terms')?.value || null,
+    delivery_terms: document.getElementById('delivery-terms')?.value || null,
+    notes: document.getElementById('order-notes')?.value || null,
+    shipping_charges: parseFloat(document.getElementById('shipping-charges')?.value || 0),
+    items: items
+  };
+
+  try {
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const token = localStorage.getItem("access_token");
+    const response = await axios.post(
+      `${apiBase}/mango/sales-orders`,
+      orderData,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    await Swal.fire({
+      title: "Success!",
+      text: `Sales Order ${response.data.order_number} created successfully!`,
+      icon: "success",
+      timer: 2000,
+      showConfirmButton: false
+    });
+
+    // Switch to order list tab
+    const listTab = document.getElementById('list-tab');
+    if (listTab) {
+      listTab.click();
+      loadSalesOrders();
+    }
+  } catch (error) {
+    console.error("Error creating order:", error);
+    Swal.fire("Error", error.response?.data?.detail || "Failed to create sales order", "error");
+  }
+}
+
+// Reset order form
+function resetOrderForm() {
+  document.getElementById('manual-order-form')?.reset();
+  document.getElementById('order-items-tbody').innerHTML = '';
+  document.getElementById('customer-details-preview').style.display = 'none';
+  salesOrderState.orderItems = [];
+  salesOrderState.selectedCustomer = null;
+  orderItemIndex = 0;
+  calculateOrderTotals();
+}
+
+// Load from quotation
+async function loadFromQuotation() {
+  if (salesOrderState.quotations.length === 0) {
+    Swal.fire("Info", "No accepted quotations available", "info");
+    return;
+  }
+
+  const { value: quotationId } = await Swal.fire({
+    title: "Select Quotation",
+    input: "select",
+    inputOptions: Object.fromEntries(
+      salesOrderState.quotations.map(q => [q.id, `${q.quotation_number} - ${q.customer?.name || 'N/A'} (₹${q.total_amount})`])
+    ),
+    showCancelButton: true,
+    confirmButtonText: "Load",
+    inputValidator: (value) => {
+      if (!value) {
+        return "Please select a quotation";
+      }
+    }
+  });
+
+  if (quotationId) {
+    try {
+      const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+      const token = localStorage.getItem("access_token");
+      const response = await axios.get(
+        `${apiBase}/mango/quotations/${quotationId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const quotation = response.data;
+      
+      // Fill customer
+      document.getElementById('order-customer').value = quotation.customer_id;
+      handleCustomerSelect(quotation.customer_id);
+
+      // Fill dates
+      document.getElementById('order-date').value = new Date().toISOString().split('T')[0];
+      if (quotation.valid_until) {
+        document.getElementById('delivery-date').value = new Date(quotation.valid_until).toISOString().split('T')[0];
+      }
+
+      // Fill items
+      document.getElementById('order-items-tbody').innerHTML = '';
+      orderItemIndex = 0;
+      quotation.items.forEach(item => {
+        addOrderItem();
+        const itemId = orderItemIndex - 1;
+        const productSelect = document.querySelector(`.item-product[data-item-id="${itemId}"]`);
+        if (productSelect && item.product_id) {
+          productSelect.value = item.product_id;
+          updateOrderItemProduct(itemId, item.product_id);
+        }
+        document.querySelector(`.item-qty[data-item-id="${itemId}"]`).value = item.quantity;
+        document.querySelector(`.item-price[data-item-id="${itemId}"]`).value = item.unit_price;
+        document.querySelector(`.item-discount[data-item-id="${itemId}"]`).value = item.discount_percent || 0;
+        document.querySelector(`.item-tax[data-item-id="${itemId}"]`).value = item.tax_rate || 0;
+        if (item.description) {
+          document.querySelector(`.item-description[data-item-id="${itemId}"]`).value = item.description;
+        }
+        calculateItemTotal(itemId);
+      });
+
+      // Fill terms
+      if (quotation.payment_terms) {
+        document.getElementById('payment-terms').value = quotation.payment_terms;
+      }
+      if (quotation.delivery_terms) {
+        document.getElementById('delivery-terms').value = quotation.delivery_terms;
+      }
+      if (quotation.notes) {
+        document.getElementById('order-notes').value = `Converted from Quotation ${quotation.quotation_number}. ${quotation.notes}`;
+      }
+
+      calculateOrderTotals();
+      Swal.fire("Success", "Quotation data loaded successfully", "success");
+    } catch (error) {
+      console.error("Error loading quotation:", error);
+      Swal.fire("Error", "Failed to load quotation data", "error");
+    }
+  }
+}
+
+// Show bulk add items modal
+function showBulkAddItemsModal() {
+  Swal.fire({
+    title: "Bulk Add Items",
+    html: `
+      <p>Paste product data from Excel/CSV. Format: <code>Product ID/SKU, Quantity, Unit Price, Discount %, Tax %</code></p>
+      <textarea class="form-control font-monospace" id="bulk-items-data" rows="10" placeholder="Paste your data here..."></textarea>
+    `,
+    showCancelButton: true,
+    confirmButtonText: "Add Items",
+    preConfirm: () => {
+      const data = document.getElementById('bulk-items-data').value;
+      if (!data.trim()) {
+        Swal.showValidationMessage("Please paste item data");
+        return false;
+      }
+      return data;
+    }
+  }).then((result) => {
+    if (result.isConfirmed && result.value) {
+      processBulkAddItems(result.value);
+    }
+  });
+}
+
+// Process bulk add items
+function processBulkAddItems(data) {
+  const lines = data.split('\n').filter(line => line.trim());
+  let added = 0;
+
+  lines.forEach(line => {
+    const parts = line.split(',').map(p => p.trim());
+    if (parts.length >= 3) {
+      addOrderItem();
+      const itemId = orderItemIndex - 1;
+      const productId = parts[0];
+      const qty = parseFloat(parts[1]) || 1;
+      const price = parseFloat(parts[2]) || 0;
+      const discount = parseFloat(parts[3]) || 0;
+      const tax = parseFloat(parts[4]) || 18;
+
+      const productSelect = document.querySelector(`.item-product[data-item-id="${itemId}"]`);
+      if (productSelect) {
+        // Try to find by ID or SKU
+        const product = salesOrderState.products.find(p => 
+          p.id == productId || p.sku === productId
+        );
+        if (product) {
+          productSelect.value = product.id;
+          updateOrderItemProduct(itemId, product.id);
+        }
+      }
+
+      document.querySelector(`.item-qty[data-item-id="${itemId}"]`).value = qty;
+      document.querySelector(`.item-price[data-item-id="${itemId}"]`).value = price;
+      document.querySelector(`.item-discount[data-item-id="${itemId}"]`).value = discount;
+      document.querySelector(`.item-tax[data-item-id="${itemId}"]`).value = tax;
+      calculateItemTotal(itemId);
+      added++;
+    }
+  });
+
+  calculateOrderTotals();
+  Swal.fire("Success", `Added ${added} items`, "success");
+}
+
 /**
- * Render order list panel
+ * Render order list panel (Advanced Sales Orders)
  */
 function renderOrderListPanel() {
   return `
     <div class="card border-0 shadow-sm">
-      <div class="card-header bg-light">
-        <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Channel Orders</h5>
+      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Sales Orders</h5>
+        <button class="btn btn-sm btn-primary" onclick="loadSalesOrders()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
       </div>
       <div class="card-body">
         <!-- Filters -->
         <div class="row g-3 mb-4">
           <div class="col-md-3">
-            <label class="form-label fw-bold">Filter by Channel</label>
-            <select class="form-select" id="filter-channel">
-              <option value="">All Channels</option>
-              <option value="amazon">Amazon</option>
-              <option value="flipkart">Flipkart</option>
-              <option value="meesho">Meesho</option>
-              <option value="myntra">Myntra</option>
-              <option value="shopify">Shopify</option>
+            <label class="form-label fw-bold">Status</label>
+            <select class="form-select" id="filter-status" onchange="loadSalesOrders()">
+              <option value="">All Statuses</option>
+              <option value="PENDING">Pending</option>
+              <option value="CONFIRMED">Confirmed</option>
+              <option value="PROCESSING">Processing</option>
+              <option value="SHIPPED">Shipped</option>
+              <option value="DELIVERED">Delivered</option>
+              <option value="CANCELLED">Cancelled</option>
             </select>
           </div>
           <div class="col-md-3">
-            <label class="form-label fw-bold">Filter by Status</label>
-            <select class="form-select" id="filter-status">
-              <option value="">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="shipped">Shipped</option>
-              <option value="delivered">Delivered</option>
-              <option value="cancelled">Cancelled</option>
+            <label class="form-label fw-bold">Customer</label>
+            <select class="form-select" id="filter-customer" onchange="loadSalesOrders()">
+              <option value="">All Customers</option>
             </select>
           </div>
           <div class="col-md-3">
             <label class="form-label fw-bold">From Date</label>
-            <input type="date" class="form-control" id="filter-from-date">
+            <input type="date" class="form-control" id="filter-from-date" onchange="loadSalesOrders()">
           </div>
           <div class="col-md-3">
             <label class="form-label fw-bold">To Date</label>
-            <input type="date" class="form-control" id="filter-to-date">
+            <input type="date" class="form-control" id="filter-to-date" onchange="loadSalesOrders()">
           </div>
         </div>
 
@@ -369,41 +969,433 @@ function renderOrderListPanel() {
             <div class="input-group">
               <span class="input-group-text"><i class="bi bi-search"></i></span>
               <input type="text" class="form-control" id="search-orders" 
-                     placeholder="Search by Order ID, Customer Name...">
+                     placeholder="Search by Order Number, Customer Name..." 
+                     onkeyup="if(event.key === 'Enter') loadSalesOrders()">
             </div>
           </div>
           <div class="col-md-6 text-end">
-            <button class="btn btn-primary" onclick="filterOrders()">
-              <i class="bi bi-funnel me-2"></i>Apply Filters
-            </button>
-            <button class="btn btn-outline-secondary" onclick="clearFilters()">
+            <button class="btn btn-outline-secondary" onclick="clearOrderFilters()">
               <i class="bi bi-x-circle me-2"></i>Clear Filters
             </button>
-            <button class="btn btn-success" onclick="exportOrders()">
-              <i class="bi bi-download me-2"></i>Export to Excel
+            <button class="btn btn-success" onclick="exportSalesOrders()">
+              <i class="bi bi-download me-2"></i>Export
             </button>
           </div>
         </div>
 
         <!-- Orders Table -->
         <div id="orders-table-container">
-          <div class="text-center text-muted py-5">
-            <i class="bi bi-inbox display-4 d-block mb-3"></i>
-            <p class="mb-0">No orders found</p>
-            <p class="small">Import orders or create manually to see them here</p>
+          <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-3 text-muted">Loading sales orders...</p>
           </div>
-        </div>
-
-        <!-- Pagination -->
-        <div id="orders-pagination" class="mt-4" style="display: none;">
-          <nav>
-            <ul class="pagination justify-content-center" id="pagination-controls">
-            </ul>
-          </nav>
         </div>
       </div>
     </div>
   `;
+}
+
+// Load sales orders
+async function loadSalesOrders() {
+  const container = document.getElementById('orders-table-container');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="text-center py-5">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p class="mt-3 text-muted">Loading sales orders...</p>
+    </div>
+  `;
+
+  try {
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const token = localStorage.getItem("access_token");
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const params = new URLSearchParams();
+    const status = document.getElementById('filter-status')?.value;
+    const customerId = document.getElementById('filter-customer')?.value;
+    const search = document.getElementById('search-orders')?.value;
+    const fromDate = document.getElementById('filter-from-date')?.value;
+    const toDate = document.getElementById('filter-to-date')?.value;
+
+    if (status) params.append('status', status);
+    if (customerId) params.append('customer_id', customerId);
+    if (search) params.append('search', search);
+    if (fromDate) params.append('start_date', fromDate);
+    if (toDate) params.append('end_date', toDate);
+
+    const response = await axios.get(
+      `${apiBase}/mango/sales-orders?${params.toString()}`,
+      { headers }
+    );
+
+    const orders = response.data || [];
+
+    if (orders.length === 0) {
+      container.innerHTML = `
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-inbox display-4 d-block mb-3"></i>
+          <p class="mb-0">No sales orders found</p>
+          <p class="small">Create orders manually or convert from quotations</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead class="bg-light">
+            <tr>
+              <th>Order Number</th>
+              <th>Customer</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th class="text-end">Amount</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orders.map(order => `
+              <tr>
+                <td>
+                  <div class="fw-bold">${order.order_number}</div>
+                  <small class="text-muted">#${order.id}</small>
+                </td>
+                <td>
+                  <div>${order.customer?.name || 'N/A'}</div>
+                  <small class="text-muted">${order.customer?.email || ''}</small>
+                </td>
+                <td>
+                  <div>${new Date(order.order_date).toLocaleDateString()}</div>
+                  <small class="text-muted">${new Date(order.order_date).toLocaleTimeString()}</small>
+                </td>
+                <td>
+                  <span class="badge ${getOrderStatusBadge(order.status)}">${order.status}</span>
+                </td>
+                <td class="text-end">
+                  <div class="fw-bold">₹${formatNumber(order.total_amount)}</div>
+                  <small class="text-muted">${order.currency}</small>
+                </td>
+                <td class="text-end">
+                  <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick="viewSalesOrder(${order.id})" title="View">
+                      <i class="bi bi-eye"></i>
+                    </button>
+                    ${order.status !== 'DELIVERED' && order.status !== 'CANCELLED' ? `
+                      <button class="btn btn-outline-secondary" onclick="editSalesOrder(${order.id})" title="Edit">
+                        <i class="bi bi-pencil"></i>
+                      </button>
+                    ` : ''}
+                    <div class="btn-group">
+                      <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split" 
+                              data-bs-toggle="dropdown" style="position: static;">
+                      </button>
+                      <ul class="dropdown-menu dropdown-menu-end" style="z-index: 1050;">
+                        <li><a class="dropdown-item" href="#" onclick="viewSalesOrderPDF(${order.id})">
+                          <i class="bi bi-eye me-2"></i>View PDF
+                        </a></li>
+                        <li><a class="dropdown-item" href="#" onclick="downloadSalesOrderPDF(${order.id})">
+                          <i class="bi bi-file-pdf me-2"></i>Download PDF
+                        </a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" onclick="updateOrderStatus(${order.id})">
+                          <i class="bi bi-arrow-repeat me-2"></i>Update Status
+                        </a></li>
+                        ${order.status !== 'SHIPPED' && order.status !== 'DELIVERED' ? `
+                          <li><a class="dropdown-item text-danger" href="#" onclick="deleteSalesOrder(${order.id})">
+                            <i class="bi bi-trash me-2"></i>Delete
+                          </a></li>
+                        ` : ''}
+                      </ul>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    // Load customers for filter
+    loadCustomersForFilter();
+  } catch (error) {
+    console.error("Error loading sales orders:", error);
+    container.innerHTML = `
+      <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Failed to load sales orders. ${error.response?.data?.detail || error.message}
+      </div>
+    `;
+  }
+}
+
+// Get order status badge class
+function getOrderStatusBadge(status) {
+  const badges = {
+    'PENDING': 'bg-warning',
+    'CONFIRMED': 'bg-info',
+    'PROCESSING': 'bg-primary',
+    'SHIPPED': 'bg-success',
+    'DELIVERED': 'bg-success',
+    'CANCELLED': 'bg-danger'
+  };
+  return badges[status] || 'bg-secondary';
+}
+
+// Format number
+function formatNumber(num) {
+  return new Intl.NumberFormat('en-IN').format(num || 0);
+}
+
+// Load customers for filter
+async function loadCustomersForFilter() {
+  try {
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(`${apiBase}/mango/customers`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const select = document.getElementById('filter-customer');
+    if (select) {
+      select.innerHTML = '<option value="">All Customers</option>' +
+        (response.data || []).map(c => 
+          `<option value="${c.id}">${c.name} ${c.customer_code ? `(${c.customer_code})` : ''}</option>`
+        ).join('');
+    }
+  } catch (error) {
+    console.error("Error loading customers:", error);
+  }
+}
+
+// View sales order
+async function viewSalesOrder(orderId) {
+  try {
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(
+      `${apiBase}/mango/sales-orders/${orderId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const order = response.data;
+    
+    Swal.fire({
+      title: `Sales Order ${order.order_number}`,
+      html: `
+        <div class="text-start">
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <strong>Customer:</strong> ${order.customer?.name || 'N/A'}<br>
+              <strong>Email:</strong> ${order.customer?.email || '-'}<br>
+              <strong>Phone:</strong> ${order.customer?.phone || '-'}
+            </div>
+            <div class="col-md-6">
+              <strong>Order Date:</strong> ${new Date(order.order_date).toLocaleDateString()}<br>
+              <strong>Delivery Date:</strong> ${order.delivery_date ? new Date(order.delivery_date).toLocaleDateString() : '-'}<br>
+              <strong>Status:</strong> <span class="badge ${getOrderStatusBadge(order.status)}">${order.status}</span>
+            </div>
+          </div>
+          ${order.shipping_address ? `<div class="mb-3"><strong>Shipping Address:</strong><br>${order.shipping_address}</div>` : ''}
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Qty</th>
+                  <th>Price</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${order.items.map(item => `
+                  <tr>
+                    <td>${item.description || 'N/A'}</td>
+                    <td>${item.quantity}</td>
+                    <td>₹${formatNumber(item.unit_price)}</td>
+                    <td>₹${formatNumber(item.line_total)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="3" class="text-end"><strong>Total:</strong></td>
+                  <td><strong>₹${formatNumber(order.total_amount)}</strong></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `,
+      width: '800px',
+      showCancelButton: true,
+      confirmButtonText: "Edit Order",
+      cancelButtonText: "Close",
+      showDenyButton: true,
+      denyButtonText: "View PDF"
+    }).then((result) => {
+      if (result.isConfirmed) {
+        editSalesOrder(orderId);
+      } else if (result.isDenied) {
+        viewSalesOrderPDF(orderId);
+      }
+    });
+  } catch (error) {
+    console.error("Error viewing order:", error);
+    Swal.fire("Error", "Failed to load order details", "error");
+  }
+}
+
+// Edit sales order
+function editSalesOrder(orderId) {
+  Swal.fire("Info", "Edit functionality coming soon. For now, you can update status or delete the order.", "info");
+}
+
+// View sales order PDF
+async function viewSalesOrderPDF(orderId) {
+  try {
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const token = localStorage.getItem("access_token");
+    
+    const response = await axios.get(
+      `${apiBase}/mango/sales-orders/${orderId}/pdf?view=true`,
+      { 
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'text'
+      }
+    );
+    
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    if (!printWindow) {
+      Swal.fire("Error", "Please allow popups to view the PDF", "error");
+      return;
+    }
+    
+    printWindow.document.write(response.data);
+    printWindow.document.close();
+  } catch (error) {
+    console.error("Error viewing PDF:", error);
+    Swal.fire("Error", "Failed to open PDF", "error");
+  }
+}
+
+// Download sales order PDF
+async function downloadSalesOrderPDF(orderId) {
+  try {
+    const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+    const token = localStorage.getItem("access_token");
+    
+    const response = await axios.get(
+      `${apiBase}/mango/sales-orders/${orderId}/pdf/download`,
+      { 
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'text'
+      }
+    );
+    
+    const blob = new Blob([response.data], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `SalesOrder_${orderId}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+    Swal.fire("Success", "PDF downloaded successfully", "success");
+  } catch (error) {
+    console.error("Error downloading PDF:", error);
+    Swal.fire("Error", "Failed to download PDF", "error");
+  }
+}
+
+// Update order status
+async function updateOrderStatus(orderId) {
+  const { value: status } = await Swal.fire({
+    title: "Update Order Status",
+    input: "select",
+    inputOptions: {
+      "PENDING": "Pending",
+      "CONFIRMED": "Confirmed",
+      "PROCESSING": "Processing",
+      "SHIPPED": "Shipped",
+      "DELIVERED": "Delivered",
+      "CANCELLED": "Cancelled"
+    },
+    showCancelButton: true,
+    confirmButtonText: "Update",
+    inputValidator: (value) => {
+      if (!value) {
+        return "Please select a status";
+      }
+    }
+  });
+
+  if (status) {
+    try {
+      const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+      const token = localStorage.getItem("access_token");
+      await axios.post(
+        `${apiBase}/mango/sales-orders/${orderId}/update-status?status=${status}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      Swal.fire("Success", "Order status updated successfully", "success");
+      loadSalesOrders();
+    } catch (error) {
+      console.error("Error updating status:", error);
+      Swal.fire("Error", error.response?.data?.detail || "Failed to update status", "error");
+    }
+  }
+}
+
+// Delete sales order
+async function deleteSalesOrder(orderId) {
+  const result = await Swal.fire({
+    title: "Delete Order?",
+    text: "This action cannot be undone",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "#dc3545",
+    confirmButtonText: "Yes, Delete"
+  });
+
+  if (result.isConfirmed) {
+    try {
+      const apiBase = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+      const token = localStorage.getItem("access_token");
+      await axios.delete(
+        `${apiBase}/mango/sales-orders/${orderId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      Swal.fire("Success", "Order deleted successfully", "success");
+      loadSalesOrders();
+    } catch (error) {
+      console.error("Error deleting order:", error);
+      Swal.fire("Error", error.response?.data?.detail || "Failed to delete order", "error");
+    }
+  }
+}
+
+// Clear order filters
+function clearOrderFilters() {
+  document.getElementById('filter-status').value = '';
+  document.getElementById('filter-customer').value = '';
+  document.getElementById('filter-from-date').value = '';
+  document.getElementById('filter-to-date').value = '';
+  document.getElementById('search-orders').value = '';
+  loadSalesOrders();
+}
+
+// Export sales orders
+function exportSalesOrders() {
+  Swal.fire("Info", "Export functionality coming soon!", "info");
 }
 
 /**

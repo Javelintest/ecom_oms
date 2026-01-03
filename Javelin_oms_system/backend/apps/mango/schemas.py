@@ -738,3 +738,193 @@ class QuotationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class QuotationStatusUpdate(BaseModel):
+    new_status: str
+    notes: Optional[str] = None
+
+
+# --- Sales Order Schemas ---
+class SalesOrderItemBase(BaseModel):
+    product_id: Optional[int] = None
+    sku: Optional[str] = None
+    description: Optional[str] = None
+    quantity: int = Field(..., gt=0)
+    unit_price: float = Field(..., ge=0)
+    discount_percent: Optional[float] = Field(0, ge=0, le=100)
+    tax_rate: Optional[float] = Field(0, ge=0, le=100)
+    unit_of_measure: Optional[str] = "PCS"
+    notes: Optional[str] = None
+
+
+class SalesOrderItemCreate(SalesOrderItemBase):
+    pass
+
+
+class SalesOrderItemResponse(SalesOrderItemBase):
+    id: int
+    order_id: int
+    discount_amount: float
+    tax_amount: float
+    line_total: float
+
+    class Config:
+        from_attributes = True
+
+
+class SalesOrderBase(BaseModel):
+    customer_id: int
+    quotation_id: Optional[int] = None
+    order_date: Optional[datetime] = None
+    delivery_date: Optional[datetime] = None
+    status: Optional[str] = "PENDING"
+    shipping_address: Optional[str] = None
+    shipping_method: Optional[str] = None
+    payment_terms: Optional[str] = None
+    delivery_terms: Optional[str] = None
+    notes: Optional[str] = None
+    currency: Optional[str] = "INR"
+    shipping_charges: Optional[float] = 0.0
+    items: List[SalesOrderItemCreate]
+
+
+class SalesOrderCreate(SalesOrderBase):
+    pass
+
+
+class SalesOrderUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    order_date: Optional[datetime] = None
+    delivery_date: Optional[datetime] = None
+    status: Optional[str] = None
+    shipping_address: Optional[str] = None
+    shipping_method: Optional[str] = None
+    tracking_number: Optional[str] = None
+    payment_terms: Optional[str] = None
+    delivery_terms: Optional[str] = None
+    notes: Optional[str] = None
+    shipping_charges: Optional[float] = None
+    items: Optional[List[SalesOrderItemCreate]] = None
+
+
+class SalesOrderResponse(SalesOrderBase):
+    id: int
+    company_id: int
+    order_number: str
+    subtotal: float
+    tax_amount: float
+    discount_amount: float
+    total_amount: float
+    created_by_user_id: int
+    created_at: datetime
+    updated_at: datetime
+    items: List[SalesOrderItemResponse]
+    customer: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+
+
+# --- Invoice Schemas ---
+class InvoiceItemBase(BaseModel):
+    product_id: Optional[int] = None
+    sku: Optional[str] = None
+    description: Optional[str] = None
+    hsn_code: Optional[str] = None
+    quantity: int = Field(..., gt=0)
+    unit_price: float = Field(..., ge=0)
+    discount_percent: Optional[float] = Field(0, ge=0, le=100)
+    tax_rate: Optional[float] = Field(0, ge=0, le=100)
+    unit_of_measure: Optional[str] = "PCS"
+    notes: Optional[str] = None
+
+
+class InvoiceItemCreate(InvoiceItemBase):
+    pass
+
+
+class InvoiceItemResponse(InvoiceItemBase):
+    id: int
+    invoice_id: int
+    discount_amount: float
+    tax_amount: float
+    line_total: float
+    igst_rate: float
+    igst_amount: float
+    cgst_rate: float
+    cgst_amount: float
+    sgst_rate: float
+    sgst_amount: float
+
+    class Config:
+        from_attributes = True
+
+
+class InvoiceBase(BaseModel):
+    customer_id: int
+    sales_order_id: Optional[int] = None
+    quotation_id: Optional[int] = None
+    invoice_date: Optional[datetime] = None
+    due_date: Optional[datetime] = None
+    status: Optional[str] = "DRAFT"
+    shipping_address: Optional[str] = None
+    billing_address: Optional[str] = None
+    payment_terms: Optional[str] = None
+    delivery_terms: Optional[str] = None
+    notes: Optional[str] = None
+    terms_conditions: Optional[str] = None
+    currency: Optional[str] = "INR"
+    shipping_charges: Optional[float] = 0.0
+    gst_number: Optional[str] = None
+    customer_gst_number: Optional[str] = None
+    place_of_supply: Optional[str] = None
+    tax_type: Optional[str] = "GST"
+    items: List[InvoiceItemCreate]
+
+
+class InvoiceCreate(InvoiceBase):
+    pass
+
+
+class InvoiceUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    invoice_date: Optional[datetime] = None
+    due_date: Optional[datetime] = None
+    status: Optional[str] = None
+    shipping_address: Optional[str] = None
+    billing_address: Optional[str] = None
+    payment_terms: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class InvoicePaymentUpdate(BaseModel):
+    paid_amount: float = Field(..., ge=0)
+    payment_date: Optional[datetime] = None
+    payment_method: Optional[str] = None
+    reference_number: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class InvoiceResponse(InvoiceBase):
+    id: int
+    company_id: int
+    invoice_number: str
+    subtotal: float
+    tax_amount: float
+    discount_amount: float
+    total_amount: float
+    paid_amount: float
+    balance_amount: float
+    payment_status: str
+    igst_amount: float
+    cgst_amount: float
+    sgst_amount: float
+    created_by_user_id: int
+    created_at: datetime
+    updated_at: datetime
+    items: List[InvoiceItemResponse]
+    customer: Optional[dict] = None
+
+    class Config:
+        from_attributes = True

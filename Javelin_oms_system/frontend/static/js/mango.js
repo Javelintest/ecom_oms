@@ -359,7 +359,32 @@ function loadSection(sectionId) {
       }
       break;
     case "sales_invoices":
-      renderSalesModule(container, "invoices");
+      if (typeof renderInvoices === "function") {
+        renderInvoices(container);
+      } else {
+        // Retry after a short delay to allow scripts to load
+        container.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary mb-3"></div><p>Loading invoices module...</p></div>';
+        let retryCount = 0;
+        const maxRetries = 10;
+        const checkInterval = setInterval(() => {
+          retryCount++;
+          if (typeof renderInvoices === "function") {
+            clearInterval(checkInterval);
+            renderInvoices(container);
+          } else if (retryCount >= maxRetries) {
+            clearInterval(checkInterval);
+            container.innerHTML = `
+              <div class="alert alert-warning">
+                <h5><i class="bi bi-exclamation-triangle me-2"></i>Invoices Module Not Loaded</h5>
+                <p>Please refresh the page to load the invoices module.</p>
+                <button class="btn btn-primary btn-sm" onclick="location.reload()">
+                  <i class="bi bi-arrow-clockwise me-1"></i>Reload Page
+                </button>
+              </div>
+            `;
+          }
+        }, 100);
+      }
       break;
     case "sales_recurring_invoices":
       renderSalesModule(container, "recurring_invoices");
@@ -458,6 +483,13 @@ function loadSection(sectionId) {
       break;
     case "sales_eway_bills":
       renderSalesModule(container, "eway_bills");
+      break;
+    case "sales_orders":
+      if (typeof renderChannelOrders === "function") {
+        renderChannelOrders(container);
+      } else {
+        container.innerHTML = '<div class="p-4 text-center">Loading sales orders...</div>';
+      }
       break;
 
     case "sale":

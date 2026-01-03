@@ -1103,12 +1103,14 @@ def send_quotation_email(
 @router.post("/{quotation_id}/update-status")
 def update_quotation_status(
     quotation_id: int,
-    new_status: str,
-    notes: Optional[str] = None,
+    status_update: schemas.QuotationStatusUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """Update quotation status with workflow validation"""
+    
+    new_status = status_update.new_status
+    notes = status_update.notes
     
     quotation = db.query(Quotation).filter(
         Quotation.id == quotation_id,
