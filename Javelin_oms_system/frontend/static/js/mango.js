@@ -5110,6 +5110,24 @@ function renderDesignModule(container) {
           </div>
         </div>
 
+        <!-- Quotations Template Designer Card -->
+        <div class="col-lg-4 col-md-6">
+          <div class="design-card h-100" onclick="openQuotationTemplateDesigner()">
+            <div class="design-card-icon quotation" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+              <i class="bi bi-file-text"></i>
+            </div>
+            <h5 class="design-card-title">Quotations Template Designer</h5>
+            <p class="design-card-desc">Customize quotation PDF templates with your branding, layout, colors, and fields. Edit HTML/CSS directly.</p>
+            <div class="design-card-stats">
+              <span class="badge bg-success bg-opacity-10 text-success">Active</span>
+            </div>
+            <div class="design-card-action">
+              <span>Open Designer</span>
+              <i class="bi bi-arrow-right"></i>
+            </div>
+          </div>
+        </div>
+
         <!-- Invoice Template Card -->
         <div class="col-lg-4 col-md-6">
           <div class="design-card h-100 coming-soon">
@@ -5212,25 +5230,26 @@ function renderDesignModule(container) {
           </div>
           <div class="row g-3">
             ${designState.customPages.map(page => `
-              <div class="col-lg-3 col-md-4 col-sm-6">
-                <div class="custom-page-card">
-                  <div class="custom-page-icon">
-                    <i class="bi ${page.icon || 'bi-file-earmark-bar-graph'}"></i>
-                  </div>
-                  <div class="custom-page-info">
-                    <h6 class="mb-1">${page.name}</h6>
-                    <small class="text-muted">${page.widgets?.length || 0} widgets</small>
-                  </div>
-                  <div class="custom-page-actions">
-                    <button class="btn btn-sm btn-icon" onclick="viewCustomPage('${page.id}')" title="View">
-                      <i class="bi bi-eye"></i>
-                    </button>
-                    <button class="btn btn-sm btn-icon" onclick="editCustomPage('${page.id}')" title="Edit">
-                      <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-icon text-danger" onclick="deleteCustomPage('${page.id}')" title="Delete">
-                      <i class="bi bi-trash"></i>
-                    </button>
+              <div class="col-md-4">
+                <div class="card border-0 shadow-sm">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <h6 class="mb-1">${page.name}</h6>
+                        <small class="text-muted">${page.description || 'No description'}</small>
+                      </div>
+                      <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary" onclick="openDashboardDesigner('${page.id}')" title="Edit">
+                          <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="deleteCustomPage('${page.id}')" title="Delete">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="small text-muted">
+                      <i class="bi bi-grid-1x2 me-1"></i> ${page.widgets.length} widgets
+                    </div>
                   </div>
                 </div>
               </div>
@@ -5241,6 +5260,575 @@ function renderDesignModule(container) {
     </div>
   `;
 }
+
+// Open Quotation Template Designer
+function openQuotationTemplateDesigner() {
+  const container = document.getElementById('dynamic-content');
+  
+  // Load saved template or use default
+  const savedTemplate = localStorage.getItem('quotation_template_html') || '';
+  const defaultTemplate = getDefaultQuotationTemplate();
+  const templateHtml = savedTemplate || defaultTemplate;
+  
+  container.innerHTML = `
+    <div class="quotation-template-designer fade-in">
+      <!-- Header -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex align-items-center gap-3">
+          <button class="btn btn-light btn-icon rounded-circle shadow-sm" onclick="loadSection('design')" title="Back">
+            <i class="bi bi-arrow-left"></i>
+          </button>
+          <div>
+            <h4 class="fw-bold mb-0">
+              <i class="bi bi-file-text me-2 text-success"></i>Quotation Template Designer
+            </h4>
+            <small class="text-muted">Customize your quotation PDF template HTML and CSS</small>
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary" onclick="previewQuotationTemplate()">
+            <i class="bi bi-eye me-1"></i> Preview
+          </button>
+          <button class="btn btn-outline-primary" onclick="resetQuotationTemplate()">
+            <i class="bi bi-arrow-counterclockwise me-1"></i> Reset to Default
+          </button>
+          <button class="btn btn-success" onclick="saveQuotationTemplate()">
+            <i class="bi bi-check-lg me-1"></i> Save Template
+          </button>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <!-- Template Editor (Left) -->
+        <div class="col-lg-7">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-light">
+              <h6 class="mb-0">
+                <i class="bi bi-code-square me-2"></i>Template HTML/CSS Editor
+              </h6>
+            </div>
+            <div class="card-body p-0">
+              <div class="editor-toolbar bg-light border-bottom p-2 d-flex justify-content-between align-items-center">
+                <div>
+                  <small class="text-muted">Edit the HTML template. Use placeholders like {quotation_number}, {customer_name}, etc.</small>
+                </div>
+                <div class="btn-group btn-group-sm">
+                  <button class="btn btn-outline-secondary" onclick="insertTemplatePlaceholder('quotation_number')" title="Insert Placeholder">
+                    <i class="bi bi-code"></i> Insert Placeholder
+                  </button>
+                </div>
+              </div>
+              <textarea 
+                id="quotation-template-editor" 
+                class="form-control font-monospace" 
+                style="min-height: 600px; font-size: 13px; border: none; resize: vertical;"
+                spellcheck="false"
+              >${escapeHtml(templateHtml)}</textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview & Placeholders (Right) -->
+        <div class="col-lg-5">
+          <!-- Available Placeholders -->
+          <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+              <h6 class="mb-0">
+                <i class="bi bi-list-ul me-2"></i>Available Placeholders
+              </h6>
+            </div>
+            <div class="card-body">
+              <div class="small">
+                <div class="mb-2">
+                  <strong>Quotation Info:</strong>
+                  <div class="mt-1">
+                    <code class="d-block mb-1">{quotation_number}</code>
+                    <code class="d-block mb-1">{quotation_date}</code>
+                    <code class="d-block mb-1">{valid_until}</code>
+                    <code class="d-block mb-1">{status}</code>
+                    <code class="d-block mb-1">{subtotal}</code>
+                    <code class="d-block mb-1">{discount_amount}</code>
+                    <code class="d-block mb-1">{tax_amount}</code>
+                    <code class="d-block mb-1">{total_amount}</code>
+                    <code class="d-block mb-1">{currency}</code>
+                  </div>
+                </div>
+                <div class="mb-2">
+                  <strong>Customer Info:</strong>
+                  <div class="mt-1">
+                    <code class="d-block mb-1">{customer_name}</code>
+                    <code class="d-block mb-1">{customer_email}</code>
+                    <code class="d-block mb-1">{customer_code}</code>
+                  </div>
+                </div>
+                <div class="mb-2">
+                  <strong>Company Info:</strong>
+                  <div class="mt-1">
+                    <code class="d-block mb-1">{company_name}</code>
+                    <code class="d-block mb-1">{company_address}</code>
+                    <code class="d-block mb-1">{company_phone}</code>
+                    <code class="d-block mb-1">{company_email}</code>
+                  </div>
+                </div>
+                <div class="mb-2">
+                  <strong>Items Loop:</strong>
+                  <div class="mt-1">
+                    <code class="d-block mb-1">{items_loop_start}</code>
+                    <code class="d-block mb-1">{item_description}</code>
+                    <code class="d-block mb-1">{item_quantity}</code>
+                    <code class="d-block mb-1">{item_unit_price}</code>
+                    <code class="d-block mb-1">{item_line_total}</code>
+                    <code class="d-block mb-1">{items_loop_end}</code>
+                  </div>
+                </div>
+                <div class="mb-2">
+                  <strong>Terms & Notes:</strong>
+                  <div class="mt-1">
+                    <code class="d-block mb-1">{payment_terms}</code>
+                    <code class="d-block mb-1">{delivery_terms}</code>
+                    <code class="d-block mb-1">{notes}</code>
+                    <code class="d-block mb-1">{terms_conditions}</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Preview -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-light">
+              <h6 class="mb-0">
+                <i class="bi bi-eye me-2"></i>Live Preview
+              </h6>
+            </div>
+            <div class="card-body p-0">
+              <iframe 
+                id="quotation-template-preview" 
+                style="width: 100%; height: 500px; border: none;"
+                srcdoc=""
+              ></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Initialize editor with change listener for live preview
+  const editor = document.getElementById('quotation-template-editor');
+  if (editor) {
+    editor.addEventListener('input', debounce(updateQuotationTemplatePreview, 500));
+    updateQuotationTemplatePreview();
+  }
+}
+
+// Get default quotation template
+function getDefaultQuotationTemplate() {
+  return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Quotation {quotation_number}</title>
+    <style>
+        @media print {
+            @page {
+                margin: 1.5cm;
+                size: A4;
+            }
+            .no-print { display: none; }
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+            max-width: 210mm;
+            margin: 0 auto;
+        }
+        .header {
+            border-bottom: 3px solid #2563eb;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #2563eb;
+            margin: 0;
+            font-size: 32px;
+            font-weight: bold;
+        }
+        .header h2 {
+            color: #64748b;
+            margin: 5px 0;
+            font-size: 18px;
+            font-weight: normal;
+        }
+        .company-info {
+            float: right;
+            text-align: right;
+            font-size: 12px;
+            color: #64748b;
+        }
+        .quotation-info {
+            margin: 20px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        .info-box {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .info-box h3 {
+            margin: 0 0 10px 0;
+            color: #1e293b;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        .info-box p {
+            margin: 5px 0;
+            font-size: 13px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            font-size: 12px;
+        }
+        th {
+            background: #2563eb;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .text-right {
+            text-align: right;
+        }
+        .text-center {
+            text-align: center;
+        }
+        .totals {
+            margin-top: 20px;
+            float: right;
+            width: 300px;
+        }
+        .totals table {
+            margin: 0;
+        }
+        .totals td {
+            padding: 8px 12px;
+            border: none;
+        }
+        .totals .label {
+            text-align: right;
+            font-weight: 600;
+        }
+        .totals .amount {
+            text-align: right;
+            font-size: 14px;
+        }
+        .total-row {
+            background: #2563eb;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        .total-row td {
+            padding: 15px 12px;
+        }
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 2px solid #e2e8f0;
+            font-size: 11px;
+            color: #64748b;
+        }
+        .terms {
+            margin-top: 30px;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        .terms h4 {
+            margin: 0 0 10px 0;
+            color: #1e293b;
+        }
+        .terms p {
+            margin: 5px 0;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="company-info">
+            <strong>{company_name}</strong><br>
+            {company_address}<br>
+            {company_phone}<br>
+            {company_email}
+        </div>
+        <h1>QUOTATION</h1>
+        <h2>{quotation_number}</h2>
+    </div>
+    
+    <div class="quotation-info">
+        <div class="info-box">
+            <h3>Quotation Details</h3>
+            <p><strong>Date:</strong> {quotation_date}</p>
+            <p><strong>Valid Until:</strong> {valid_until}</p>
+            <p><strong>Status:</strong> {status}</p>
+        </div>
+        
+        <div class="info-box">
+            <h3>Bill To</h3>
+            <p><strong>{customer_name}</strong></p>
+            <p>{customer_email}</p>
+            <p>Code: {customer_code}</p>
+        </div>
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 5%;">#</th>
+                <th style="width: 40%;">Description</th>
+                <th style="width: 10%;" class="text-center">Qty</th>
+                <th style="width: 15%;" class="text-right">Unit Price</th>
+                <th style="width: 10%;" class="text-right">Discount %</th>
+                <th style="width: 10%;" class="text-right">Tax %</th>
+                <th style="width: 15%;" class="text-right">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {items_loop_start}
+            <tr>
+                <td>1</td>
+                <td>
+                    <strong>{item_description}</strong>
+                    <br><small style="color: #64748b;">SKU: {item_sku}</small>
+                </td>
+                <td class="text-center">{item_quantity} {item_unit_of_measure}</td>
+                <td class="text-right">{item_unit_price}</td>
+                <td class="text-right">{item_discount_percent}%</td>
+                <td class="text-right">{item_tax_rate}%</td>
+                <td class="text-right"><strong>{item_line_total}</strong></td>
+            </tr>
+            {items_loop_end}
+        </tbody>
+    </table>
+    
+    <div class="totals">
+        <table>
+            <tr>
+                <td class="label">Subtotal:</td>
+                <td class="amount">{subtotal}</td>
+            </tr>
+            <tr>
+                <td class="label">Discount:</td>
+                <td class="amount">{discount_amount}</td>
+            </tr>
+            <tr>
+                <td class="label">Tax:</td>
+                <td class="amount">{tax_amount}</td>
+            </tr>
+            <tr class="total-row">
+                <td class="label">Total:</td>
+                <td class="amount">{total_amount}</td>
+            </tr>
+        </table>
+    </div>
+    
+    {payment_terms}
+    {delivery_terms}
+    {terms_conditions}
+    {notes}
+    
+    <div class="footer">
+        <p style="text-align: center;">
+            <strong>Thank you for your business!</strong><br>
+            This quotation is valid until {valid_until}.<br>
+            Generated on {generated_date}
+        </p>
+    </div>
+</body>
+</html>`;
+}
+
+// Save quotation template
+function saveQuotationTemplate() {
+  const editor = document.getElementById('quotation-template-editor');
+  if (!editor) return;
+  
+  const template = editor.value;
+  localStorage.setItem('quotation_template_html', template);
+  
+  Swal.fire({
+    title: "Success!",
+    text: "Quotation template saved successfully. It will be used for all future PDF generations.",
+    icon: "success",
+    timer: 2000,
+    showConfirmButton: false
+  });
+}
+
+// Reset to default template
+function resetQuotationTemplate() {
+  Swal.fire({
+    title: "Reset Template?",
+    text: "This will restore the default template. Your current changes will be lost.",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Yes, Reset",
+    cancelButtonText: "Cancel"
+  }).then((result) => {
+    if (result.isConfirmed) {
+      const editor = document.getElementById('quotation-template-editor');
+      if (editor) {
+        editor.value = getDefaultQuotationTemplate();
+        localStorage.removeItem('quotation_template_html');
+        updateQuotationTemplatePreview();
+        Swal.fire("Success", "Template reset to default", "success");
+      }
+    }
+  });
+}
+
+// Preview quotation template
+function previewQuotationTemplate() {
+  const editor = document.getElementById('quotation-template-editor');
+  if (!editor) return;
+  
+  const template = editor.value;
+  const previewHtml = template
+    .replace(/{quotation_number}/g, 'QTN-0001')
+    .replace(/{quotation_date}/g, new Date().toLocaleDateString())
+    .replace(/{valid_until}/g, new Date(Date.now() + 30*24*60*60*1000).toLocaleDateString())
+    .replace(/{status}/g, 'DRAFT')
+    .replace(/{customer_name}/g, 'Sample Customer')
+    .replace(/{customer_email}/g, 'customer@example.com')
+    .replace(/{customer_code}/g, 'CUST001')
+    .replace(/{company_name}/g, 'Your Company Name')
+    .replace(/{company_address}/g, '123 Business St, City, State 12345')
+    .replace(/{company_phone}/g, '+1 (555) 123-4567')
+    .replace(/{company_email}/g, 'info@company.com')
+    .replace(/{subtotal}/g, '₹10,000.00')
+    .replace(/{discount_amount}/g, '₹500.00')
+    .replace(/{tax_amount}/g, '₹1,800.00')
+    .replace(/{total_amount}/g, '₹11,300.00')
+    .replace(/{currency}/g, 'INR')
+    .replace(/{payment_terms}/g, '<div class="terms"><h4>Payment Terms</h4><p>NET 30</p></div>')
+    .replace(/{delivery_terms}/g, '<div class="terms"><h4>Delivery Terms</h4><p>FOB</p></div>')
+    .replace(/{terms_conditions}/g, '<div class="terms"><h4>Terms & Conditions</h4><p>Standard terms apply.</p></div>')
+    .replace(/{notes}/g, '<div class="terms"><h4>Notes</h4><p>Thank you for your business!</p></div>')
+    .replace(/{generated_date}/g, new Date().toLocaleString())
+    .replace(/{items_loop_start}/g, '')
+    .replace(/{items_loop_end}/g, '')
+    .replace(/{item_description}/g, 'Sample Product')
+    .replace(/{item_sku}/g, 'SKU-001')
+    .replace(/{item_quantity}/g, '10')
+    .replace(/{item_unit_of_measure}/g, 'PCS')
+    .replace(/{item_unit_price}/g, '₹1,000.00')
+    .replace(/{item_discount_percent}/g, '5')
+    .replace(/{item_tax_rate}/g, '18')
+    .replace(/{item_line_total}/g, '₹11,300.00');
+  
+  const previewWindow = window.open('', '_blank', 'width=1200,height=800');
+  if (previewWindow) {
+    previewWindow.document.write(previewHtml);
+    previewWindow.document.close();
+  }
+}
+
+// Update live preview
+function updateQuotationTemplatePreview() {
+  const editor = document.getElementById('quotation-template-editor');
+  const preview = document.getElementById('quotation-template-preview');
+  if (!editor || !preview) return;
+  
+  const template = editor.value;
+  const previewHtml = template
+    .replace(/{quotation_number}/g, 'QTN-0001')
+    .replace(/{quotation_date}/g, new Date().toLocaleDateString())
+    .replace(/{valid_until}/g, new Date(Date.now() + 30*24*60*60*1000).toLocaleDateString())
+    .replace(/{status}/g, 'DRAFT')
+    .replace(/{customer_name}/g, 'Sample Customer')
+    .replace(/{customer_email}/g, 'customer@example.com')
+    .replace(/{customer_code}/g, 'CUST001')
+    .replace(/{company_name}/g, 'Your Company Name')
+    .replace(/{company_address}/g, '123 Business St, City, State 12345')
+    .replace(/{company_phone}/g, '+1 (555) 123-4567')
+    .replace(/{company_email}/g, 'info@company.com')
+    .replace(/{subtotal}/g, '₹10,000.00')
+    .replace(/{discount_amount}/g, '₹500.00')
+    .replace(/{tax_amount}/g, '₹1,800.00')
+    .replace(/{total_amount}/g, '₹11,300.00')
+    .replace(/{currency}/g, 'INR')
+    .replace(/{payment_terms}/g, '<div class="terms"><h4>Payment Terms</h4><p>NET 30</p></div>')
+    .replace(/{delivery_terms}/g, '<div class="terms"><h4>Delivery Terms</h4><p>FOB</p></div>')
+    .replace(/{terms_conditions}/g, '<div class="terms"><h4>Terms & Conditions</h4><p>Standard terms apply.</p></div>')
+    .replace(/{notes}/g, '<div class="terms"><h4>Notes</h4><p>Thank you for your business!</p></div>')
+    .replace(/{generated_date}/g, new Date().toLocaleString())
+    .replace(/{items_loop_start}/g, '')
+    .replace(/{items_loop_end}/g, '')
+    .replace(/{item_description}/g, 'Sample Product')
+    .replace(/{item_sku}/g, 'SKU-001')
+    .replace(/{item_quantity}/g, '10')
+    .replace(/{item_unit_of_measure}/g, 'PCS')
+    .replace(/{item_unit_price}/g, '₹1,000.00')
+    .replace(/{item_discount_percent}/g, '5')
+    .replace(/{item_tax_rate}/g, '18')
+    .replace(/{item_line_total}/g, '₹11,300.00');
+  
+  preview.srcdoc = previewHtml;
+}
+
+// Insert template placeholder
+function insertTemplatePlaceholder(placeholder) {
+  const editor = document.getElementById('quotation-template-editor');
+  if (!editor) return;
+  
+  const cursorPos = editor.selectionStart;
+  const textBefore = editor.value.substring(0, cursorPos);
+  const textAfter = editor.value.substring(cursorPos);
+  
+  editor.value = textBefore + '{' + placeholder + '}' + textAfter;
+  editor.focus();
+  editor.setSelectionRange(cursorPos + placeholder.length + 2, cursorPos + placeholder.length + 2);
+  updateQuotationTemplatePreview();
+}
+
+// Debounce helper
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// Escape HTML helper
+function escapeHtml(text) {
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+// ================= END QUOTATION TEMPLATE DESIGNER =================
 
 function addDesignModuleStyles() {
   if (document.getElementById('design-module-styles')) return;
