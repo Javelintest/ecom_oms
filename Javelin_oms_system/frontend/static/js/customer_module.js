@@ -10,14 +10,26 @@
 function renderSalesModule(container, subPage = "customers") {
   if (subPage === "customers") {
     renderCustomerList(container);
+  } else if (subPage === "quotes") {
+    // Render quotations module
+    if (typeof renderQuotations === "function") {
+      renderQuotations(container);
+    } else {
+      container.innerHTML = `
+        <div class="alert alert-warning">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          Quotations module is loading...
+        </div>
+      `;
+      // Load the quotations script if not already loaded
+      const script = document.createElement('script');
+      script.src = '../../static/js/quotations.js?v=1';
+      script.onload = () => renderQuotations(container);
+      document.head.appendChild(script);
+    }
   } else {
     // Other sales pages - show placeholder for now
     const pages = {
-      quotes: {
-        title: "Quotations",
-        icon: "bi-file-text",
-        description: "Create and manage sales quotes",
-      },
       orders: {
         title: "Sales Orders",
         icon: "bi-receipt",

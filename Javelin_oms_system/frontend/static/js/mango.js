@@ -337,6 +337,20 @@ function loadSection(sectionId) {
     case "sales_quotes":
       renderSalesModule(container, "quotes");
       break;
+    case "quotation_form":
+      if (typeof renderQuotationForm === "function") {
+        renderQuotationForm(subSection);
+      } else {
+        container.innerHTML = '<div class="alert alert-warning">Loading quotation form...</div>';
+      }
+      break;
+    case "quotation_view":
+      if (typeof viewQuotation === "function") {
+        viewQuotation(subSection);
+      } else {
+        container.innerHTML = '<div class="alert alert-warning">Loading quotation view...</div>';
+      }
+      break;
     case "sales_orders":
       if (typeof renderChannelOrders === "function") {
         renderChannelOrders(container);

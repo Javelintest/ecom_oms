@@ -50,6 +50,9 @@ app.include_router(mango_inventory.router, prefix="/mango/inventory", tags=["Man
 from .apps.mango.routers import customers
 app.include_router(customers.router, prefix="/mango/customers", tags=["Customer Management"])
 
+from .apps.mango.routers import quotations
+app.include_router(quotations.router, prefix="/mango", tags=["Quotations"])
+
 from .apps.mango import dispatch_routes
 app.include_router(dispatch_routes.router, prefix="/mango", tags=["Dispatch Scanning"])
 

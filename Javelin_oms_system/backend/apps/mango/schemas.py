@@ -22,7 +22,7 @@ class VendorResponse(VendorBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Warehouse Schemas ---
 class WarehouseBase(BaseModel):
@@ -39,7 +39,7 @@ class WarehouseResponse(WarehouseBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Product Schemas ---
 class ProductBase(BaseModel):
@@ -220,7 +220,7 @@ class ProductResponse(ProductBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- PO Schemas ---
 class POItemCreate(BaseModel):
@@ -245,7 +245,7 @@ class POItemResponse(POItemCreate):
     total_price: float
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class POResponse(BaseModel):
     id: int
@@ -258,7 +258,7 @@ class POResponse(BaseModel):
     items: List[POItemResponse] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- GRN Schemas ---
 class GRNItemCreate(BaseModel):
@@ -280,7 +280,7 @@ class GRNCreate(BaseModel):
 class GRNItemResponse(GRNItemCreate):
     id: int
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class GRNResponse(BaseModel):
     id: int
@@ -290,7 +290,7 @@ class GRNResponse(BaseModel):
     items: List[GRNItemResponse]
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Stock Transfer Schemas ---
 class StockTransferItemCreate(BaseModel):
@@ -310,7 +310,7 @@ class StockTransferItemResponse(StockTransferItemCreate):
     quantity_received: int
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class StockTransferUpdate(BaseModel):
     """Schema for updating draft transfers"""
@@ -349,7 +349,7 @@ class StockTransferResponse(BaseModel):
     items: List[StockTransferItemResponse]
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Stock Adjustment Schemas ---
 class StockAdjustmentCreate(BaseModel):
@@ -365,7 +365,7 @@ class StockAdjustmentResponse(StockAdjustmentCreate):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Stock Audit Schemas ---
 class StockAuditItemResponse(BaseModel):
@@ -376,7 +376,7 @@ class StockAuditItemResponse(BaseModel):
     discrepancy: Optional[int]
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class StockAuditCreate(BaseModel):
     audit_number: str
@@ -393,7 +393,7 @@ class StockAuditResponse(BaseModel):
     items: List[StockAuditItemResponse] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Return Schemas ---
 class CustomerReturnItemCreate(BaseModel):
@@ -415,7 +415,7 @@ class CustomerReturnItemResponse(CustomerReturnItemCreate):
     action: Optional[str]
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class CustomerReturnResponse(BaseModel):
     id: int
@@ -426,7 +426,7 @@ class CustomerReturnResponse(BaseModel):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # --- Platform Item Mapping Schemas ---
@@ -456,7 +456,7 @@ class PlatformMappingResponse(PlatformMappingBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class PlatformMappingWithProduct(PlatformMappingResponse):
     product_sku: Optional[str] = None
@@ -490,7 +490,7 @@ class CustomerAddressResponse(CustomerAddressBase):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # --- Customer Contact Schemas ---
@@ -513,7 +513,7 @@ class CustomerContactResponse(CustomerContactBase):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # --- Customer Ledger Schemas ---
@@ -539,7 +539,7 @@ class CustomerLedgerResponse(CustomerLedgerBase):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # --- Customer Schemas ---
@@ -596,7 +596,7 @@ class CustomerResponse(CustomerBase):
     contacts: List[CustomerContactResponse] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class CustomerListResponse(BaseModel):
     id: int
@@ -612,7 +612,7 @@ class CustomerListResponse(BaseModel):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class CustomerBalanceResponse(BaseModel):
     customer_id: int
@@ -632,3 +632,109 @@ class CustomerStatementResponse(BaseModel):
     closing_balance: float
     total_debit: float
     total_credit: float
+
+
+# --- Quotation Schemas ---
+class QuotationItemBase(BaseModel):
+    product_id: Optional[int] = None
+    sku: Optional[str] = None
+    description: Optional[str] = None
+    quantity: int = Field(..., gt=0)
+    unit_price: float = Field(..., ge=0)
+    discount_percent: Optional[float] = Field(0, ge=0, le=100)
+    tax_rate: Optional[float] = Field(0, ge=0, le=100)
+    unit_of_measure: Optional[str] = "PCS"
+    notes: Optional[str] = None
+
+
+class QuotationItemCreate(QuotationItemBase):
+    pass
+
+
+class QuotationItemResponse(QuotationItemBase):
+    id: int
+    quotation_id: int
+    discount_amount: float
+    tax_amount: float
+    line_total: float
+
+    class Config:
+        from_attributes = True
+
+
+class QuotationBase(BaseModel):
+    customer_id: int
+    quotation_date: Optional[datetime] = None
+    valid_until: datetime
+    status: Optional[str] = "DRAFT"
+    payment_terms: Optional[str] = None
+    delivery_terms: Optional[str] = None
+    notes: Optional[str] = None
+    terms_conditions: Optional[str] = None
+    currency: Optional[str] = "INR"
+    items: List[QuotationItemCreate]
+
+
+class QuotationCreate(QuotationBase):
+    pass
+
+
+class QuotationUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    quotation_date: Optional[datetime] = None
+    valid_until: Optional[datetime] = None
+    status: Optional[str] = None
+    payment_terms: Optional[str] = None
+    delivery_terms: Optional[str] = None
+    notes: Optional[str] = None
+    terms_conditions: Optional[str] = None
+    items: Optional[List[QuotationItemCreate]] = None
+
+
+class QuotationListResponse(BaseModel):
+    id: int
+    quotation_number: str
+    customer_id: int
+    quotation_date: datetime
+    valid_until: datetime
+    status: str
+    total_amount: float
+    currency: str
+    created_at: datetime
+    customer: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+
+
+class QuotationResponse(BaseModel):
+    id: int
+    company_id: int
+    quotation_number: str
+    customer_id: int
+    quotation_date: datetime
+    valid_until: datetime
+    sent_date: Optional[datetime] = None
+    status: str
+    subtotal: float
+    tax_amount: float
+    discount_amount: float
+    total_amount: float
+    currency: str
+    payment_terms: Optional[str] = None
+    delivery_terms: Optional[str] = None
+    notes: Optional[str] = None
+    terms_conditions: Optional[str] = None
+    converted_to_order_id: Optional[int] = None
+    converted_to_invoice_id: Optional[int] = None
+    converted_at: Optional[datetime] = None
+    created_by_user_id: int
+    last_viewed_at: Optional[datetime] = None
+    viewed_count: int
+    created_at: datetime
+    updated_at: datetime
+    items: List[QuotationItemResponse]
+    customer: Optional[dict] = None
+
+    class Config:
+        from_attributes = True

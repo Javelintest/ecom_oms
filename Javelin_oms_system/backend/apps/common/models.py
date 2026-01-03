@@ -517,6 +517,163 @@ class PurchaseOrderItem(Base):
     product = relationship("Product")
 
 
+class Quotation(Base):
+    """Sales Quotation Head"""
+    __tablename__ = "quotations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), index=True, nullable=False)
+    quotation_number = Column(String(50), unique=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), index=True, nullable=False)
+    
+    # Dates
+    quotation_date = Column(DateTime, nullable=False, server_default=func.now())
+    valid_until = Column(DateTime, nullable=False)  # Expiry date
+    sent_date = Column(DateTime, nullable=True)
+    
+    # Status
+    status = Column(String(50), default="DRAFT", index=True)  
+    # DRAFT, SENT, VIEWED, ACCEPTED, REJECTED, EXPIRED, CONVERTED
+    
+    # Financials
+    subtotal = Column(Numeric(12, 2), default=0)
+    tax_amount = Column(Numeric(12, 2), default=0)
+    discount_amount = Column(Numeric(12, 2), default=0)
+    total_amount = Column(Numeric(12, 2), default=0)
+    currency = Column(String(10), default="INR")
+    
+    # Terms & Notes
+    payment_terms = Column(String(200))
+    delivery_terms = Column(String(200))
+    notes = Column(Text)
+    terms_conditions = Column(Text)
+    
+    # Conversion tracking
+    converted_to_order_id = Column(Integer, nullable=True)
+    converted_to_invoice_id = Column(Integer, nullable=True)
+    converted_at = Column(DateTime, nullable=True)
+    
+    # Metadata
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    last_viewed_at = Column(DateTime, nullable=True)
+    viewed_count = Column(Integer, default=0)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    customer = relationship("Customer")
+    items = relationship("QuotationItem", back_populates="quotation", cascade="all, delete-orphan")
+
+
+class QuotationItem(Base):
+    """Quotation Lines"""
+    __tablename__ = "quotation_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quotation_id = Column(Integer, ForeignKey("quotations.id"), index=True, nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    sku = Column(String(100), index=True)
+    
+    # Item details
+    description = Column(String(500))
+    quantity = Column(Integer, nullable=False, default=1)
+    unit_price = Column(Numeric(10, 2), nullable=False)
+    
+    # Pricing
+    discount_percent = Column(Numeric(5, 2), default=0)
+    discount_amount = Column(Numeric(10, 2), default=0)
+    tax_rate = Column(Numeric(5, 2), default=0)
+    tax_amount = Column(Numeric(10, 2), default=0)
+    line_total = Column(Numeric(12, 2), nullable=False)
+    
+    # Additional info
+    unit_of_measure = Column(String(20), default="PCS")
+    notes = Column(Text)
+    
+    # Relationships
+    quotation = relationship("Quotation", back_populates="items")
+    product = relationship("Product")
+
+
+class SalesOrder(Base):
+    """Sales Order Head"""
+    __tablename__ = "sales_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), index=True, nullable=False)
+    order_number = Column(String(50), unique=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), index=True, nullable=False)
+    quotation_id = Column(Integer, ForeignKey("quotations.id"), nullable=True)  # Link to source quotation
+    
+    # Dates
+    order_date = Column(DateTime, nullable=False, server_default=func.now())
+    delivery_date = Column(DateTime, nullable=True)
+    
+    # Status
+    status = Column(String(50), default="PENDING", index=True)  
+    # PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED
+    
+    # Financials
+    subtotal = Column(Numeric(12, 2), default=0)
+    tax_amount = Column(Numeric(12, 2), default=0)
+    discount_amount = Column(Numeric(12, 2), default=0)
+    shipping_charges = Column(Numeric(12, 2), default=0)
+    total_amount = Column(Numeric(12, 2), default=0)
+    currency = Column(String(10), default="INR")
+    
+    # Shipping
+    shipping_address = Column(Text)
+    shipping_method = Column(String(100))
+    tracking_number = Column(String(100))
+    
+    # Terms & Notes
+    payment_terms = Column(String(200))
+    delivery_terms = Column(String(200))
+    notes = Column(Text)
+    
+    # Metadata
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    customer = relationship("Customer")
+    quotation = relationship("Quotation")
+    items = relationship("SalesOrderItem", back_populates="order", cascade="all, delete-orphan")
+
+
+class SalesOrderItem(Base):
+    """Sales Order Lines"""
+    __tablename__ = "sales_order_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("sales_orders.id"), index=True, nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    sku = Column(String(100), index=True)
+    
+    # Item details
+    description = Column(String(500))
+    quantity = Column(Integer, nullable=False, default=1)
+    unit_price = Column(Numeric(10, 2), nullable=False)
+    
+    # Pricing
+    discount_percent = Column(Numeric(5, 2), default=0)
+    discount_amount = Column(Numeric(10, 2), default=0)
+    tax_rate = Column(Numeric(5, 2), default=0)
+    tax_amount = Column(Numeric(10, 2), default=0)
+    line_total = Column(Numeric(12, 2), nullable=False)
+    
+    # Additional info
+    unit_of_measure = Column(String(20), default="PCS")
+    notes = Column(Text)
+    
+    # Relationships
+    order = relationship("SalesOrder", back_populates="items")
+    product = relationship("Product")
+
+
 class GRN(Base):
     """Goods Receipt Note Head"""
     __tablename__ = "grns"
